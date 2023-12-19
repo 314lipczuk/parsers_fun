@@ -44,15 +44,16 @@ parseRel =
   <|> (symbol "/" $> Divide)
   <|> (symbol "%" $> Modulo)
 
-parseNum :: Parsec Void Text Int
+parseNum :: Parsec Void Text NumExpr
 parseNum = do
-  s <- optional ( symbol "+" <|> symbol "-")
+  --s <- optional ( symbol "+" <|> symbol "-")
   n <- lexeme L.decimal
-  case s of
-    Nothing -> return n
-    Just "-" -> return (-n)
-    Just "+" -> return n
-    _ -> fail "Invalid number"
+  --case s of
+  --  Nothing -> return n
+  --  Just "-" -> return (-n)
+  --  Just "+" -> return n
+  --  _ -> fail "Invalid number"
+  pure (ConstNum n)
 
 parseJustNum :: Parsec Void Text Int
 parseJustNum = lexeme L.decimal
@@ -64,18 +65,19 @@ parseIdentifier = Identifier <$> lexeme (takeWhile1P Nothing isAlpha)
 data Assignment = Assignment Identifier NumExpr deriving (Show, Eq)
 
 -- num_expr = NUM | "-" num_expr | "+" num_expr | IDENT | num_expr num_op num_expr | "(" num_expr ")"
+data PrefixOp = UnaryPlus | UnaryMinus deriving (Show, Eq)
 
 data NumExpr = 
   ConstNum Int
   | Ident Identifier
-  | NumExpr NumExpr NumOp NumExpr
-  | NegNumExpr NumExpr
+  | NumExpr NumExpr RelOp NumExpr
+  | NumExprWithPrefix PrefixOp NumExpr
   | ParenthesisedNumExpr NumExpr
-  
-parseNumExpr :: Parser Void Text NumExpr
+  deriving (Show, Eq)
+
+parseNumExpr :: Parsec Void Text NumExpr
 parseNumExpr = 
-  parseNum 
-  <|> sequence [symbol "(", parseNumExpr, symbol ")"]
+  parseNum
 
 parse_simple_instr = undefined
 parse_instr = undefined
