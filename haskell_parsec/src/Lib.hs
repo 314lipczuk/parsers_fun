@@ -11,6 +11,7 @@ import qualified Text.Megaparsec.Char.Lexer as L -- (1)
 import Control.Monad.Combinators.Expr
 import GHC.Conc (par)
 import Data.Functor (($>))
+import Data.Char (isAlpha)
 
 type Parser = Parsec Void Text
 
@@ -23,11 +24,8 @@ symbol = L.symbol space
 someFunc :: IO ()
 someFunc = putStrLn "someFucc"
 
-
-
 parseProgram = undefined
 
-parseNumExpr = undefined
 
 parseBoolExpr :: Parsec Void Text Bool
 parseBoolExpr = undefined
@@ -55,6 +53,29 @@ parseNum = do
     Just "-" -> return (-n)
     Just "+" -> return n
     _ -> fail "Invalid number"
+
+parseJustNum :: Parsec Void Text Int
+parseJustNum = lexeme L.decimal
+
+newtype Identifier = Identifier Text deriving (Show, Eq)
+parseIdentifier :: Parsec Void Text Identifier
+parseIdentifier = Identifier <$> lexeme (takeWhile1P Nothing isAlpha)
+
+data Assignment = Assignment Identifier NumExpr deriving (Show, Eq)
+
+-- num_expr = NUM | "-" num_expr | "+" num_expr | IDENT | num_expr num_op num_expr | "(" num_expr ")"
+
+data NumExpr = 
+  ConstNum Int
+  | Ident Identifier
+  | NumExpr NumExpr NumOp NumExpr
+  | NegNumExpr NumExpr
+  | ParenthesisedNumExpr NumExpr
+  
+parseNumExpr :: Parser Void Text NumExpr
+parseNumExpr = 
+  parseNum 
+  <|> sequence [symbol "(", parseNumExpr, symbol ")"]
 
 parse_simple_instr = undefined
 parse_instr = undefined
