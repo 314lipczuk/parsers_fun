@@ -10,6 +10,7 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L -- (1)
 import Control.Monad.Combinators.Expr
 import GHC.Conc (par)
+import Data.Functor (($>))
 
 type Parser = Parsec Void Text
 
@@ -22,45 +23,49 @@ symbol = L.symbol space
 someFunc :: IO ()
 someFunc = putStrLn "someFucc"
 
-data Expr
-  = Var String
-  | Int Int
-  | Negation Expr
-  | Sum      Expr Expr
-  | Subtr    Expr Expr
-  | Product  Expr Expr
-  | Division Expr Expr
-  deriving (Eq, Ord, Show)
-
-operatorTable :: [[Operator Parser Expr]]
-operatorTable = [
-    [ prefix "-" Negation, prefix "+" id ],
-    [ binary "*" Product, binary "/" Division],
-    [binary "+" Sum, binary "-" Subtr]
-    ]
-
-binary :: Text -> (Expr -> Expr -> Expr) -> Operator Parser Expr
-binary name f = InfixL (f <$ symbol name)
-
-prefix, postfix :: Text -> (Expr -> Expr) -> Operator Parser Expr
-prefix name f = Prefix (f <$ symbol name)
-postfix name f = Postfix (f <$ symbol name)
 
 
-parseEqualLen :: Parser String
-parseEqualLen = do
-  a <- char 'a'
-  l <- optional parseEqualLen
-  b <- char 'b'
-  case l of 
-    Nothing -> return ([a, b])
-    Just l' -> return ([a] ++ l' ++ [b])
+parseProgram = undefined
 
-parseBrackets :: Parser String
-parseBrackets = do
-  char '('
-  l <- optional $ many parseBrackets
-  char ')'
-  case l of 
-    Nothing -> return ("()")
-    Just l' -> return ("(" ++ show l'  ++ ")")
+parseNumExpr = undefined
+
+parseBoolExpr :: Parsec Void Text Bool
+parseBoolExpr = undefined
+
+data BoolOp = And | Or deriving (Show, Eq)
+parseBoolOp :: Parsec Void Text BoolOp
+parseBoolOp = (symbol "and" $> And) <|> (symbol "or" $> Or)
+
+
+data RelOp = Plus | Minus | Multiply | Divide | Modulo deriving (Show, Eq)
+parseRel :: Parsec Void Text RelOp
+parseRel =
+  (symbol "+" $> Plus)
+  <|> (symbol "-" $> Minus)
+  <|> (symbol "*" $> Multiply)
+  <|> (symbol "/" $> Divide)
+  <|> (symbol "%" $> Modulo)
+
+parseNum :: Parsec Void Text Int
+parseNum = do
+  s <- optional ( symbol "+" <|> symbol "-")
+  n <- lexeme L.decimal
+  case s of
+    Nothing -> return n
+    Just "-" -> return (-n)
+    Just "+" -> return n
+    _ -> fail "Invalid number"
+
+parse_simple_instr = undefined
+parse_instr = undefined
+parse_assign = undefined
+parse_if_stat = undefined
+parse_jmp = undefined
+parse_output = undefined
+parse_input = undefined
+parseDeclaration = undefined
+parseDeclarationList = undefined
+parse_program = undefined
+parseNumOp = undefined
+
+
