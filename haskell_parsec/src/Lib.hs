@@ -33,93 +33,48 @@ data BoolOp = And | Or deriving (Show, Eq)
 parseBoolOp :: Parsec Void Text BoolOp
 parseBoolOp = (symbol "and" $> And) <|> (symbol "or" $> Or)
 
-data NumOp = Plus | Minus | Multiply | Divide | Modulo deriving (Show, Eq)
-parseNumOp :: Parsec Void Text NumOp 
-parseNumOp =
-  (symbol "+" $> Plus)
-  <|> (symbol "-" $> Minus)
-  <|> (symbol "*" $> Multiply)
-  <|> (symbol "/" $> Divide)
-  <|> (symbol "%" $> Modulo)
-
-parseOpPrec0 :: Parsec Void Text NumOp
-parseOpPrec0 = (symbol "+" $> Plus) <|> (symbol "-" $> Minus)
-
-parseOpPrec1 :: Parsec Void Text NumOp
-parseOpPrec1 = (symbol "*" $> Multiply) <|> (symbol "/" $> Divide) <|> (symbol "%" $> Modulo)
-
---parseNumPrec1 :: Parsec Void Text NumExpr
---parseNumPrec1 = do 
---  e1 <- parseNumAtom
---  op <- parseOpPrec1
---  e2 <- try parseNumPrec1 <|> parseNumAtom
---  return $ NumExpr e1 op e2
---
---parseNumPrec0 :: Parsec Void Text NumExpr
---parseNumPrec0 = do
---  e1 <- try parseNumPrec1 <|> parseNumAtom
---  op <- parseOpPrec0
---  e2 <- 
---  return $ NumExpr e1 op e2
-
-parseNumAtom :: Parsec Void Text NumExpr
-parseNumAtom = Ident <$> parseIdentifier <|> parseNumExprWithPrefix <|> try parseNum <|> parseParenthesisedNumExpr
-
---parseNumBinaryOp :: Parsec Void Text NumExpr
---parseNumBinaryOp = try parseNumPrec1 <|> parseNumPrec0 
-
-
 parseNum :: Parsec Void Text NumExpr
 parseNum = ConstNum <$> lexeme L.decimal
 
---parseJustNum :: Parsec Void Text Int
---parseJustNum = lexeme L.decimal
+--newtype Identifier = Identifier Text deriving (Show, Eq)
+--parseIdentifier :: Parsec Void Text Identifier
+--parseIdentifier = Identifier <$> lexeme (takeWhile1P Nothing isAlpha)
 
-newtype Identifier = Identifier Text deriving (Show, Eq)
-parseIdentifier :: Parsec Void Text Identifier
-parseIdentifier = Identifier <$> lexeme (takeWhile1P Nothing isAlpha)
-
-data Assignment = Assignment Identifier NumExpr deriving (Show, Eq)
-
--- num_expr = NUM | "-" num_expr | "+" num_expr | IDENT | num_expr num_op num_expr | "(" num_expr ")"
-data PrefixOp = UnaryPlus | UnaryMinus deriving (Show, Eq)
-parsePrefixOp :: Parsec Void Text PrefixOp
-parsePrefixOp = (symbol "+" $> UnaryPlus) <|> (symbol "-" $> UnaryMinus)
+--data Assignment = Assignment Identifier NumExpr deriving (Show, Eq)
 
 data NumExpr =
   ConstNum Int
-  | Ident Identifier
-  | BinaryExpr NumExpr NumOp NumExpr
-  | NumExprWithPrefix PrefixOp NumExpr
-  | ParenthesisedNumExpr NumExpr
-  deriving (Show, Eq)
+  | Ident String
+  | Negation NumExpr
+  | UnaryPlus NumExpr
+  | Sum NumExpr NumExpr
+  | Subtr NumExpr NumExpr
+  | Product NumExpr NumExpr
+  | Division NumExpr NumExpr
+  | Modulo NumExpr NumExpr
+  deriving (Eq, Ord, Show )
 
-parseNumExprWithPrefix :: Parsec Void Text NumExpr
-parseNumExprWithPrefix = do
-  op <- parsePrefixOp
-  expr <- Ident <$> parseIdentifier <|> try parseNum <|> parseParenthesisedNumExpr
-  return $ NumExprWithPrefix op expr
+parseConstNum :: Parsec Void Text NumExpr
+parseConstNum = ConstNum <$> lexeme L.decimal
 
-parseParenthesisedNumExpr :: Parsec Void Text NumExpr
-parseParenthesisedNumExpr = do
-  _ <- symbol "("
-  expr <- parseNumExpr
-  _ <- symbol ")"
-  return $ ParenthesisedNumExpr expr
+parseIdent :: Parsec Void Text NumExpr
+parseIdent =  Ident <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
 
-parseBinaryNumericalExpression :: Parsec Void Text NumExpr
-parseBinaryNumericalExpression = do
-  -- has to be like this, so that it's not left recursive
-  e1 <- parseNumExprWithPrefix <|> parseNum <|> (Ident <$> parseIdentifier) <|> parseParenthesisedNumExpr
-  op <- parseNumOp
-  r2 <- parseNumExpr
-  return $ BinaryExpr e1 op r2
+parens :: Parser a -> Parser a
+parens = between (symbol "(") (symbol ")")
 
-parseNumExpr :: Parsec Void Text NumExpr
-parseNumExpr =
-  try  parseBinaryNumericalExpression <|> parseParenthesisedNumExpr <|> try parseNumExprWithPrefix <|> try parseNum <|> (Ident <$> parseIdentifier)    
+pTerm :: Parser NumExpr
+pTerm = choice [parens pExpr, parseConstNum, parseIdent]
 
+operatorTable :: [[Operator Parser NumExpr]]
+operatorTable = [
+  [Prefix (Negation <$ symbol "-"), Prefix (UnaryPlus <$ symbol "+")],
+  [InfixL (Product <$ symbol "*"), InfixL (Division <$ symbol "/"), InfixL (Modulo <$ symbol "%")],
+  [InfixL (Sum <$ symbol "+"), InfixL (Subtr <$ symbol "-")]
+  ]
 
+pExpr :: Parser NumExpr
+pExpr = makeExprParser pTerm operatorTable
 
 parse_simple_instr = undefined
 parse_instr = undefined
