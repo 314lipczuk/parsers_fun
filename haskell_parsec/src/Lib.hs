@@ -7,7 +7,7 @@ import Data.Text (Text)
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L -- (1)
+import qualified Text.Megaparsec.Char.Lexer as L
 import Control.Monad.Combinators.Expr
 import GHC.Conc (par)
 import Data.Functor (($>), (<&>))
@@ -26,25 +26,71 @@ someFunc = putStrLn "someFucc"
 
 parseProgram = undefined
 
-parseBoolExpr :: Parsec Void Text Bool
-parseBoolExpr = undefined
 
-data BoolOp = And | Or deriving (Show, Eq)
-parseBoolOp :: Parsec Void Text BoolOp
-parseBoolOp = (symbol "and" $> And) <|> (symbol "or" $> Or)
+-- Boolean expressions  --
+--------------------------
 
-parseNum :: Parsec Void Text NumExpr
+data BoolExpr = 
+  ConstBool Bool
+  | IdentB String
+  | Not BoolExpr
+  | And BoolExpr BoolExpr
+  | Or BoolExpr BoolExpr
+  | Relational RelationalExpr
+  deriving (Eq, Ord, Show)
+
+operatorTableBool :: [[Operator Parser BoolExpr]]
+operatorTableBool = [
+  [Prefix (Not <$ symbol "not")],
+  [InfixL (And <$ symbol "and")],
+  [InfixL (Or <$ symbol "or")]
+  ]
+
+parseBoolExpr :: Parser BoolExpr
+parseBoolExpr = makeExprParser bTerm operatorTableBool
+
+bTerm :: Parser BoolExpr
+bTerm = choice [parens parseBoolExpr, parseConstBool, parseIdentB, parseRelationalExpr <&> Relational]
+
+parseConstBool :: Parser BoolExpr
+parseConstBool = ConstBool <$> (True <$ symbol "true" <|> False <$ symbol "false")
+
+parseIdentB :: Parser BoolExpr
+parseIdentB = IdentB <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
+
+-- Relational expressions -- 
+----------------------------
+data RelationalExpr = 
+  GreaterEquals NumExpr NumExpr
+  | Greater NumExpr NumExpr
+  | LessEquals NumExpr NumExpr
+  | Less NumExpr NumExpr
+  | Equals NumExpr NumExpr
+  | NotEquals NumExpr NumExpr
+  deriving (Eq, Ord, Show)
+
+parseRelationalExpr :: Parser RelationalExpr
+parseRelationalExpr = do
+  ne1 <- numericalExprParser
+  op <- symbol ">=" <|>  symbol ">" <|>  symbol "<=" <|>  symbol "<" <|>  symbol "=" <|>  symbol "<>"
+  ne2 <- numericalExprParser
+  return $ case op of 
+    ">=" -> GreaterEquals ne1 ne2
+    ">" -> Greater ne1 ne2
+    "<=" -> LessEquals ne1 ne2
+    "<" -> Less ne1 ne2
+    "=" -> Equals ne1 ne2
+    "<>" -> NotEquals ne1 ne2
+    _ -> error "This should never happen"
+
+-- Numerical expressions --
+---------------------------
+parseNum :: Parser NumExpr
 parseNum = ConstNum <$> lexeme L.decimal
-
---newtype Identifier = Identifier Text deriving (Show, Eq)
---parseIdentifier :: Parsec Void Text Identifier
---parseIdentifier = Identifier <$> lexeme (takeWhile1P Nothing isAlpha)
-
---data Assignment = Assignment Identifier NumExpr deriving (Show, Eq)
 
 data NumExpr =
   ConstNum Int
-  | Ident String
+  | IdentN String
   | Negation NumExpr
   | UnaryPlus NumExpr
   | Sum NumExpr NumExpr
@@ -54,17 +100,17 @@ data NumExpr =
   | Modulo NumExpr NumExpr
   deriving (Eq, Ord, Show )
 
-parseConstNum :: Parsec Void Text NumExpr
+parseConstNum :: Parser NumExpr
 parseConstNum = ConstNum <$> lexeme L.decimal
 
-parseIdent :: Parsec Void Text NumExpr
-parseIdent =  Ident <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
+parseIdent ::  Parser NumExpr
+parseIdent =  IdentN <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
 
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
 pTerm :: Parser NumExpr
-pTerm = choice [parens pExpr, parseConstNum, parseIdent]
+pTerm = choice [parens numericalExprParser, parseConstNum, parseIdent]
 
 operatorTable :: [[Operator Parser NumExpr]]
 operatorTable = [
@@ -73,8 +119,13 @@ operatorTable = [
   [InfixL (Sum <$ symbol "+"), InfixL (Subtr <$ symbol "-")]
   ]
 
-pExpr :: Parser NumExpr
-pExpr = makeExprParser pTerm operatorTable
+numericalExprParser :: Parser NumExpr
+numericalExprParser = makeExprParser pTerm operatorTable
+
+-- Statements --
+----------------
+
+
 
 parse_simple_instr = undefined
 parse_instr = undefined
