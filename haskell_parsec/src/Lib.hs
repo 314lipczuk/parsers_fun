@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Lib
-    ( someFunc
+    ( parseBoolExpr, parseNum, parse_program, BoolExpr(..), NumExpr(..), RelationalExpr(..) 
     ) where
 
 import Data.Text (Text)
