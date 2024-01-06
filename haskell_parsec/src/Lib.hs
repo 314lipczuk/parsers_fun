@@ -94,11 +94,6 @@ data NumExpr =
   | ParenthesisedNumExpr NumExpr
   deriving (Show, Eq)
 
---ChangeToLinearForm :: NumExpr -> NumExpr
---ChangeToLinearForm e = 
---  case e of 
---    BinaryExpr e1 op e2 -> 
-
 parseNumExprWithPrefix :: Parsec Void Text NumExpr
 parseNumExprWithPrefix = do
   op <- parsePrefixOp
