@@ -42,6 +42,33 @@ parseNumOp =
   <|> (symbol "/" $> Divide)
   <|> (symbol "%" $> Modulo)
 
+parseOpPrec0 :: Parsec Void Text NumOp
+parseOpPrec0 = (symbol "+" $> Plus) <|> (symbol "-" $> Minus)
+
+parseOpPrec1 :: Parsec Void Text NumOp
+parseOpPrec1 = (symbol "*" $> Multiply) <|> (symbol "/" $> Divide) <|> (symbol "%" $> Modulo)
+
+--parseNumPrec1 :: Parsec Void Text NumExpr
+--parseNumPrec1 = do 
+--  e1 <- parseNumAtom
+--  op <- parseOpPrec1
+--  e2 <- try parseNumPrec1 <|> parseNumAtom
+--  return $ NumExpr e1 op e2
+--
+--parseNumPrec0 :: Parsec Void Text NumExpr
+--parseNumPrec0 = do
+--  e1 <- try parseNumPrec1 <|> parseNumAtom
+--  op <- parseOpPrec0
+--  e2 <- 
+--  return $ NumExpr e1 op e2
+
+parseNumAtom :: Parsec Void Text NumExpr
+parseNumAtom = Ident <$> parseIdentifier <|> parseNumExprWithPrefix <|> try parseNum <|> parseParenthesisedNumExpr
+
+--parseNumBinaryOp :: Parsec Void Text NumExpr
+--parseNumBinaryOp = try parseNumPrec1 <|> parseNumPrec0 
+
+
 parseNum :: Parsec Void Text NumExpr
 parseNum = ConstNum <$> lexeme L.decimal
 
@@ -62,16 +89,21 @@ parsePrefixOp = (symbol "+" $> UnaryPlus) <|> (symbol "-" $> UnaryMinus)
 data NumExpr =
   ConstNum Int
   | Ident Identifier
-  | NumExpr NumExpr NumOp NumExpr
+  | BinaryExpr NumExpr NumOp NumExpr
   | NumExprWithPrefix PrefixOp NumExpr
   | ParenthesisedNumExpr NumExpr
   deriving (Show, Eq)
 
+--ChangeToLinearForm :: NumExpr -> NumExpr
+--ChangeToLinearForm e = 
+--  case e of 
+--    BinaryExpr e1 op e2 -> 
+
 parseNumExprWithPrefix :: Parsec Void Text NumExpr
 parseNumExprWithPrefix = do
   op <- parsePrefixOp
-  expr <- parseNumExpr
-  return $ ParenthesisedNumExpr $ NumExprWithPrefix op expr
+  expr <- Ident <$> parseIdentifier <|> try parseNum <|> parseParenthesisedNumExpr
+  return $ NumExprWithPrefix op expr
 
 parseParenthesisedNumExpr :: Parsec Void Text NumExpr
 parseParenthesisedNumExpr = do
@@ -86,11 +118,13 @@ parseBinaryNumericalExpression = do
   e1 <- parseNumExprWithPrefix <|> parseNum <|> (Ident <$> parseIdentifier) <|> parseParenthesisedNumExpr
   op <- parseNumOp
   r2 <- parseNumExpr
-  return $ NumExpr e1 op r2
+  return $ BinaryExpr e1 op r2
 
 parseNumExpr :: Parsec Void Text NumExpr
 parseNumExpr =
-  try parseBinaryNumericalExpression <|> parseParenthesisedNumExpr <|> try parseNumExprWithPrefix <|> try parseNum <|> (Ident <$> parseIdentifier)    
+  try  parseBinaryNumericalExpression <|> parseParenthesisedNumExpr <|> try parseNumExprWithPrefix <|> try parseNum <|> (Ident <$> parseIdentifier)    
+
+
 
 parse_simple_instr = undefined
 parse_instr = undefined
