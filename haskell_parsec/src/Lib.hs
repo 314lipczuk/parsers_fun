@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Lib
-    ( parseBoolExpr, parseNum, parse_program, BoolExpr(..), NumExpr(..), RelationalExpr(..) 
+    (parseBlock,Ident(..) ,parseSerialInstr, parseInput, parseOutput,parseTag, parseIf, parseGoto, parseInstr, parseBoolExpr, parseNum, parse_program, parseAssignment, Instr(..), BoolExpr(..), NumExpr(..), RelationalExpr(..) 
     ) where
 
 import Data.Text (Text)
@@ -140,8 +140,10 @@ data Instr =
 parseInstr :: Parser Instr
 parseInstr =
   parseGoto
-  <|> try parseAssignment 
+  <|> parseOutput
+  <|> parseInput
   <|> try parseTag
+  <|> try parseAssignment 
   <|> parseIf
   <|> parseBlock
 

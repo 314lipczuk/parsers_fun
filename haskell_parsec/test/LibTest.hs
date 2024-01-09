@@ -50,4 +50,67 @@ spec_parseBoolExpr = do
         case parse parseBoolExpr "" "" of
             Left err -> ("ParseErrorBundle" `isPrefixOf` show err) `shouldBe` True
             Right result -> fail "Should not parse nothing"
+    it "should parse assignment" $ 
+        case parse parseAssignment "" "x := 1+8" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Assign (Ident "x") (Sum (ConstNum 1) (ConstNum 8))
+    it "should parse output" $ 
+        case parse parseOutput "" "print 1 + abc21 * 7" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Output (Sum (ConstNum 1) (Product (IdentN "abc21") (ConstNum 7)))
+
+    it "should parse input" $ 
+        case parse parseInput "" "read abc21" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Input (Ident "abc21")
     
+    it "should parse tag" $ 
+        case parse parseTag "" "loop: goto start" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Tag (Ident "loop") (Goto (Ident "start")) 
+
+    it "should parse simple If" $ 
+        case parse parseIf "" "if 1 + 1 > a then print 0" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` If (Relational (Greater (Sum (ConstNum 1) (ConstNum 1)) (IdentN "a"))) (Output (ConstNum 0)) Nothing
+
+    it "should parse complex If" $ 
+        case parse parseIf "" "if 1 + 1 > a then print 0 else print 1" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` If (Relational (Greater (Sum (ConstNum 1) (ConstNum 1)) (IdentN "a"))) (Output (ConstNum 0)) (Just (Output (ConstNum 1)))
+
+
+
+
+    -- the same as above, but with full instruction parser
+    -- this checks if precedence isnt broken
+    it "should parse assignment as instruction" $ 
+        case parse parseInstr "" "x := 1+8" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Assign (Ident "x") (Sum (ConstNum 1) (ConstNum 8))
+    it "should parse output as instruction" $ 
+        case parse parseInstr "" "print 1 + abc21 * 7" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Output (Sum (ConstNum 1) (Product (IdentN "abc21") (ConstNum 7)))
+
+    it "should parse input as instruction" $ 
+        case parse parseInstr "" "read abc21" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Input (Ident "abc21")
+    
+    it "should parse tag as instruction" $ 
+        case parse parseInstr "" "loop: goto start" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` Tag (Ident "loop") (Goto (Ident "start")) 
+
+    it "should parse simple If as instruction" $ 
+        case parse parseInstr "" "if 1 + 1 > a then print 0" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` If (Relational (Greater (Sum (ConstNum 1) (ConstNum 1)) (IdentN "a"))) (Output (ConstNum 0)) Nothing
+
+    it "should parse complex If as instruction" $ 
+        case parse parseInstr "" "if 1 + 1 > a then print 0 else print 1" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` If (Relational (Greater (Sum (ConstNum 1) (ConstNum 1)) (IdentN "a"))) (Output (ConstNum 0)) (Just (Output (ConstNum 1)))
+    -- todo : test blocks 
+    -- todo : test full mutually recursive instructions
