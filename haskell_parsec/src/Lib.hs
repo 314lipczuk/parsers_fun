@@ -21,11 +21,6 @@ lexeme = L.lexeme space
 symbol :: Text -> Parser Text
 symbol = L.symbol space
 
-someFunc :: IO ()
-someFunc = putStrLn "someFucc"
-
-parseProgram = undefined
-
 
 -- Boolean expressions  --
 --------------------------
@@ -103,14 +98,14 @@ data NumExpr =
 parseConstNum :: Parser NumExpr
 parseConstNum = ConstNum <$> lexeme L.decimal
 
-parseIdent ::  Parser NumExpr
-parseIdent =  IdentN <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
+parseIdentN ::  Parser NumExpr
+parseIdentN =  IdentN <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
 
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
 pTerm :: Parser NumExpr
-pTerm = choice [parens numericalExprParser, parseConstNum, parseIdent]
+pTerm = choice [parens numericalExprParser, parseConstNum, parseIdentN]
 
 operatorTable :: [[Operator Parser NumExpr]]
 operatorTable = [
@@ -122,12 +117,88 @@ operatorTable = [
 numericalExprParser :: Parser NumExpr
 numericalExprParser = makeExprParser pTerm operatorTable
 
--- Statements --
-----------------
+-- Instructions --
+------------------
 
+newtype Ident = Ident String deriving (Eq, Ord, Show)
+parseIdent ::  Parser Ident
+parseIdent =  Ident <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
 
+data Instr = 
+  Assign Ident NumExpr
+  | If BoolExpr Instr (Maybe Instr)
+  | Goto Ident
+  | Gosub Ident
+  | Block [Instr]
+  | Output NumExpr
+  | Input Ident
+  | Tag Ident Instr
+  | Return
+  deriving (Eq, Ord, Show)
+
+-- nie ma za duzo o tym jak ma dzialac return. Wiec zakladam, ze jest to zwykla instrukcja
+parseInstr :: Parser Instr
+parseInstr =
+  parseGoto
+  <|> try parseAssignment 
+  <|> try parseTag
+  <|> parseIf
+  <|> parseBlock
+
+parseAssignment :: Parser Instr
+parseAssignment = do
+  IdentN ident <- parseIdentN
+  _ <- symbol ":="
+  ne <- numericalExprParser
+  return $ Assign (Ident ident) ne
+
+parseBlock :: Parser Instr
+parseBlock = do
+  _ <- symbol "begin"
+  b <- many parseSerialInstr
+  _ <- symbol "end"
+  return $ Block b
+
+parseSerialInstr :: Parser Instr 
+parseSerialInstr = do
+  instr <- parseInstr
+  _ <- symbol ";"
+  return instr
+
+parseOutput :: Parser Instr
+parseOutput = symbol "print" >> Output <$> numericalExprParser
+
+parseInput :: Parser Instr
+parseInput = symbol "read" >> Input <$> parseIdent
+
+parseTag:: Parser Instr
+parseTag= do
+  ident <- parseIdent
+  _ <- symbol ":"
+  ne <- parseInstr 
+  return $ Tag ident ne
+
+parseIf :: Parser Instr
+parseIf = do
+  _ <- symbol "if"
+  be <- parseBoolExpr
+  _ <- symbol "then"
+  instr <- parseInstr
+  optional_else <- optional (symbol "else" >> parseInstr)
+  return $ If be instr optional_else
+
+parseGoto :: Parser Instr
+parseGoto = choice 
+  [symbol "goto" >> Goto <$> parseIdent,
+   symbol "gosub" >> Gosub <$> parseIdent]
+
+data Decl = 
+  LabelDecl Ident
+  | VarDecl Ident
 
 parse_simple_instr = undefined
+
+
 parse_instr = undefined
 parse_assign = undefined
 parse_if_stat = undefined
@@ -137,4 +208,3 @@ parse_input = undefined
 parseDeclaration = undefined
 parseDeclarationList = undefined
 parse_program = undefined
-parseRelOp = undefined
