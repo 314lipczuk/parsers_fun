@@ -1,6 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Lib
-    (parseBlock,Ident(..) ,parseSerialInstr, parseInput, parseOutput,parseTag, parseIf, parseGoto, parseInstr, parseBoolExpr, parseNum, parse_program, parseAssignment, Instr(..), BoolExpr(..), NumExpr(..), RelationalExpr(..) 
+    ( 
+   Decl(..)
+  , parseLabelDecl
+  ,parseProgramInstr
+  ,parseProgramDecl
+  , parseVarDecl
+  , parseDeclaration
+  , parseDeclarations
+  , parseProgram,
+      parseBlock,Ident(..) ,parseSerialInstr, parseInput, parseOutput,parseTag, parseIf, parseGoto, parseInstr, parseBoolExpr, parseNum,parseProgram, parseAssignment, Instr(..), BoolExpr(..), NumExpr(..), RelationalExpr(..) 
     ) where
 
 import Data.Text (Text)
@@ -45,7 +54,7 @@ parseBoolExpr :: Parser BoolExpr
 parseBoolExpr = makeExprParser bTerm operatorTableBool
 
 bTerm :: Parser BoolExpr
-bTerm = choice [parens parseBoolExpr, parseConstBool, parseIdentB, parseRelationalExpr <&> Relational]
+bTerm = choice [ parseConstBool, parseRelationalExpr <&> Relational, parseIdentB, parens parseBoolExpr]
 
 parseConstBool :: Parser BoolExpr
 parseConstBool = ConstBool <$> (True <$ symbol "true" <|> False <$ symbol "false")
@@ -142,10 +151,14 @@ parseInstr =
   parseGoto
   <|> parseOutput
   <|> parseInput
+  <|> parseReturn
   <|> try parseTag
   <|> try parseAssignment 
   <|> parseIf
   <|> parseBlock
+
+parseReturn :: Parser Instr
+parseReturn = symbol "return" >> return Return
 
 parseAssignment :: Parser Instr
 parseAssignment = do
@@ -197,16 +210,51 @@ parseGoto = choice
 data Decl = 
   LabelDecl Ident
   | VarDecl Ident
+  deriving (Eq, Ord, Show)
 
-parse_simple_instr = undefined
+parseLabelDecl :: Parser Decl
+parseLabelDecl = LabelDecl <$> (symbol "label" >> parseIdent)
+
+parseVarDecl:: Parser Decl
+parseVarDecl= VarDecl<$> (symbol "var" >> parseIdent)
+
+parseDeclaration :: Parser Decl
+parseDeclaration = do
+  c <- choice [parseLabelDecl, parseVarDecl]
+  _ <- symbol ";"
+  return c
+
+parseDeclarations :: Parser [Decl]
+parseDeclarations = many parseDeclaration
+
+parseProgram :: Parser ([Decl], [Instr])
+parseProgram = do
+  decls <- parseDeclarations
+  instrs <- many parseSerialInstr
+  return (decls, instrs)
 
 
-parse_instr = undefined
-parse_assign = undefined
-parse_if_stat = undefined
-parse_jmp = undefined
-parse_output = undefined
-parse_input = undefined
-parseDeclaration = undefined
-parseDeclarationList = undefined
-parse_program = undefined
+parseProgramInstr :: Parser [Instr]
+parseProgramInstr = do
+  _ <- parseDeclarations
+  instrs <- many parseSerialInstr
+  return instrs
+
+parseProgramDecl :: Parser [Decl]
+parseProgramDecl = do
+  decls <- parseDeclarations
+  _ <- many parseSerialInstr
+  return decls
+
+sampleProgram :: Text
+sampleProgram = "label loop; var k;\
+            \var j; \
+            \var i; \
+            \read k; \
+            \if k > 0 then begin \
+            \j:=1; i:=k; loop: \
+            \j:=j*i; \
+            \i:=i-1; \
+            \if i > 1 then goto loop; \
+            \ print j; \
+            \end;"

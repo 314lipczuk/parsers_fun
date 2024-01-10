@@ -112,5 +112,43 @@ spec_parseBoolExpr = do
         case parse parseInstr "" "if 1 + 1 > a then print 0 else print 1" of
             Left err -> fail (show err)
             Right result -> result `shouldBe` If (Relational (Greater (Sum (ConstNum 1) (ConstNum 1)) (IdentN "a"))) (Output (ConstNum 0)) (Just (Output (ConstNum 1)))
+
+    it "should parse complex If with simple relation" $ 
+        case parse parseProgramInstr "" "if 1 > a then print 0 else print 1;" of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` [If (Relational (Greater  (ConstNum 1) (IdentN "a"))) (Output (ConstNum 0)) (Just (Output (ConstNum 1)))]
+
+    it "should parse sample program" $ 
+        case parse parseProgram "" sampleProgram of
+            Left err -> fail (show err)
+            Right result -> result `shouldBe` solution
+        where 
+            sampleProgram = "label loop; var k;\
+            \ var j;\
+            \ var i;\
+            \ read k;\
+            \ if k > 0 then begin\
+            \ j:=1; i:=k; loop:\
+            \ j:=j*i;\
+            \ i:=i-1;\
+            \ if i > 1 then goto loop;\
+            \  print j;\
+            \ end;"
+            solution = (
+                [LabelDecl (Ident "loop"),
+                 VarDecl (Ident "k"),
+                 VarDecl (Ident "j"),
+                 VarDecl (Ident "i")],
+                [Input (Ident "k"),
+                   If (Relational (Greater (IdentN "k") (ConstNum 0))) 
+                   (Block 
+                    [Assign (Ident "j") (ConstNum 1),
+                     Assign (Ident "i") (IdentN "k"),
+                     Tag (Ident "loop") (Assign (Ident "j") (Product (IdentN "j") (IdentN "i"))),
+                    Assign (Ident "i") (Subtr (IdentN "i") (ConstNum 1)),
+                    If (Relational (Greater (IdentN "i") (ConstNum 1)))
+                    (Goto (Ident "loop")) Nothing,
+                    Output (IdentN "j")]) Nothing])
+
     -- todo : test blocks 
     -- todo : test full mutually recursive instructions
