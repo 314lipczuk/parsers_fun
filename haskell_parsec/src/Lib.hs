@@ -1,26 +1,43 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Lib
-    ( 
-   Decl(..)
-  , parseLabelDecl
-  ,parseProgramInstr
-  ,parseProgramDecl
-  , parseVarDecl
-  , parseDeclaration
-  , parseDeclarations
-  , parseProgram,
-      parseBlock,Ident(..) ,parseSerialInstr, parseInput, parseOutput,parseTag, parseIf, parseGoto, parseInstr, parseBoolExpr, parseNum,parseProgram, parseAssignment, Instr(..), BoolExpr(..), NumExpr(..), RelationalExpr(..) 
-    ) where
 
+module Lib
+  ( Decl (..),
+    parseLabelDecl,
+    parseProgramInstr,
+    parseProgramDecl,
+    parseVarDecl,
+    parseDeclaration,
+    parseDeclarations,
+    parseProgram,
+    parseBlock,
+    Ident (..),
+    parseSerialInstr,
+    parseInput,
+    parseOutput,
+    parseTag,
+    parseIf,
+    parseGoto,
+    parseInstr,
+    parseBoolExpr,
+    parseNum,
+    parseProgram,
+    parseAssignment,
+    Instr (..),
+    BoolExpr (..),
+    NumExpr (..),
+    RelationalExpr (..),
+  )
+where
+
+import Control.Monad.Combinators.Expr
+import Data.Char (isAlpha)
+import Data.Functor (($>), (<&>))
 import Data.Text (Text)
 import Data.Void
+import GHC.Conc (par)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import Control.Monad.Combinators.Expr
-import GHC.Conc (par)
-import Data.Functor (($>), (<&>))
-import Data.Char (isAlpha)
 
 type Parser = Parsec Void Text
 
@@ -30,12 +47,11 @@ lexeme = L.lexeme space
 symbol :: Text -> Parser Text
 symbol = L.symbol space
 
-
 -- Boolean expressions  --
 --------------------------
 
-data BoolExpr = 
-  ConstBool Bool
+data BoolExpr
+  = ConstBool Bool
   | IdentB String
   | Not BoolExpr
   | And BoolExpr BoolExpr
@@ -44,17 +60,17 @@ data BoolExpr =
   deriving (Eq, Ord, Show)
 
 operatorTableBool :: [[Operator Parser BoolExpr]]
-operatorTableBool = [
-  [Prefix (Not <$ symbol "not")],
-  [InfixL (And <$ symbol "and")],
-  [InfixL (Or <$ symbol "or")]
+operatorTableBool =
+  [ [Prefix (Not <$ symbol "not")],
+    [InfixL (And <$ symbol "and")],
+    [InfixL (Or <$ symbol "or")]
   ]
 
 parseBoolExpr :: Parser BoolExpr
 parseBoolExpr = makeExprParser bTerm operatorTableBool
 
 bTerm :: Parser BoolExpr
-bTerm = choice [ parseConstBool, parseRelationalExpr <&> Relational, parseIdentB, parens parseBoolExpr]
+bTerm = choice [parseConstBool, parseRelationalExpr <&> Relational, parseIdentB, parens parseBoolExpr]
 
 parseConstBool :: Parser BoolExpr
 parseConstBool = ConstBool <$> (True <$ symbol "true" <|> False <$ symbol "false")
@@ -62,10 +78,10 @@ parseConstBool = ConstBool <$> (True <$ symbol "true" <|> False <$ symbol "false
 parseIdentB :: Parser BoolExpr
 parseIdentB = IdentB <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
 
--- Relational expressions -- 
+-- Relational expressions --
 ----------------------------
-data RelationalExpr = 
-  GreaterEquals NumExpr NumExpr
+data RelationalExpr
+  = GreaterEquals NumExpr NumExpr
   | Greater NumExpr NumExpr
   | LessEquals NumExpr NumExpr
   | Less NumExpr NumExpr
@@ -76,9 +92,9 @@ data RelationalExpr =
 parseRelationalExpr :: Parser RelationalExpr
 parseRelationalExpr = do
   ne1 <- numericalExprParser
-  op <- symbol ">=" <|>  symbol ">" <|>  symbol "<=" <|>  symbol "<" <|>  symbol "=" <|>  symbol "<>"
+  op <- symbol ">=" <|> symbol ">" <|> symbol "<=" <|> symbol "<" <|> symbol "=" <|> symbol "<>"
   ne2 <- numericalExprParser
-  return $ case op of 
+  return $ case op of
     ">=" -> GreaterEquals ne1 ne2
     ">" -> Greater ne1 ne2
     "<=" -> LessEquals ne1 ne2
@@ -92,8 +108,8 @@ parseRelationalExpr = do
 parseNum :: Parser NumExpr
 parseNum = ConstNum <$> lexeme L.decimal
 
-data NumExpr =
-  ConstNum Int
+data NumExpr
+  = ConstNum Int
   | IdentN String
   | Negation NumExpr
   | UnaryPlus NumExpr
@@ -102,13 +118,13 @@ data NumExpr =
   | Product NumExpr NumExpr
   | Division NumExpr NumExpr
   | Modulo NumExpr NumExpr
-  deriving (Eq, Ord, Show )
+  deriving (Eq, Ord, Show)
 
 parseConstNum :: Parser NumExpr
 parseConstNum = ConstNum <$> lexeme L.decimal
 
-parseIdentN ::  Parser NumExpr
-parseIdentN =  IdentN <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
+parseIdentN :: Parser NumExpr
+parseIdentN = IdentN <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
 
 parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
@@ -117,10 +133,10 @@ pTerm :: Parser NumExpr
 pTerm = choice [parens numericalExprParser, parseConstNum, parseIdentN]
 
 operatorTable :: [[Operator Parser NumExpr]]
-operatorTable = [
-  [Prefix (Negation <$ symbol "-"), Prefix (UnaryPlus <$ symbol "+")],
-  [InfixL (Product <$ symbol "*"), InfixL (Division <$ symbol "/"), InfixL (Modulo <$ symbol "%")],
-  [InfixL (Sum <$ symbol "+"), InfixL (Subtr <$ symbol "-")]
+operatorTable =
+  [ [Prefix (Negation <$ symbol "-"), Prefix (UnaryPlus <$ symbol "+")],
+    [InfixL (Product <$ symbol "*"), InfixL (Division <$ symbol "/"), InfixL (Modulo <$ symbol "%")],
+    [InfixL (Sum <$ symbol "+"), InfixL (Subtr <$ symbol "-")]
   ]
 
 numericalExprParser :: Parser NumExpr
@@ -130,11 +146,12 @@ numericalExprParser = makeExprParser pTerm operatorTable
 ------------------
 
 newtype Ident = Ident String deriving (Eq, Ord, Show)
-parseIdent ::  Parser Ident
-parseIdent =  Ident <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
 
-data Instr = 
-  Assign Ident NumExpr
+parseIdent :: Parser Ident
+parseIdent = Ident <$> lexeme ((:) <$> letterChar <*> many alphaNumChar)
+
+data Instr
+  = Assign Ident NumExpr
   | If BoolExpr Instr (Maybe Instr)
   | Goto Ident
   | Gosub Ident
@@ -149,13 +166,13 @@ data Instr =
 parseInstr :: Parser Instr
 parseInstr =
   parseGoto
-  <|> parseOutput
-  <|> parseInput
-  <|> parseReturn
-  <|> try parseTag
-  <|> try parseAssignment 
-  <|> parseIf
-  <|> parseBlock
+    <|> parseOutput
+    <|> parseInput
+    <|> parseReturn
+    <|> try parseTag
+    <|> try parseAssignment
+    <|> parseIf
+    <|> parseBlock
 
 parseReturn :: Parser Instr
 parseReturn = symbol "return" >> return Return
@@ -174,7 +191,7 @@ parseBlock = do
   _ <- symbol "end"
   return $ Block b
 
-parseSerialInstr :: Parser Instr 
+parseSerialInstr :: Parser Instr
 parseSerialInstr = do
   instr <- parseInstr
   _ <- symbol ";"
@@ -186,11 +203,11 @@ parseOutput = symbol "print" >> Output <$> numericalExprParser
 parseInput :: Parser Instr
 parseInput = symbol "read" >> Input <$> parseIdent
 
-parseTag:: Parser Instr
-parseTag= do
+parseTag :: Parser Instr
+parseTag = do
   ident <- parseIdent
   _ <- symbol ":"
-  ne <- parseInstr 
+  ne <- parseInstr
   return $ Tag ident ne
 
 parseIf :: Parser Instr
@@ -203,20 +220,22 @@ parseIf = do
   return $ If be instr optional_else
 
 parseGoto :: Parser Instr
-parseGoto = choice 
-  [symbol "goto" >> Goto <$> parseIdent,
-   symbol "gosub" >> Gosub <$> parseIdent]
+parseGoto =
+  choice
+    [ symbol "goto" >> Goto <$> parseIdent,
+      symbol "gosub" >> Gosub <$> parseIdent
+    ]
 
-data Decl = 
-  LabelDecl Ident
+data Decl
+  = LabelDecl Ident
   | VarDecl Ident
   deriving (Eq, Ord, Show)
 
 parseLabelDecl :: Parser Decl
 parseLabelDecl = LabelDecl <$> (symbol "label" >> parseIdent)
 
-parseVarDecl:: Parser Decl
-parseVarDecl= VarDecl<$> (symbol "var" >> parseIdent)
+parseVarDecl :: Parser Decl
+parseVarDecl = VarDecl <$> (symbol "var" >> parseIdent)
 
 parseDeclaration :: Parser Decl
 parseDeclaration = do
@@ -233,7 +252,6 @@ parseProgram = do
   instrs <- many parseSerialInstr
   return (decls, instrs)
 
-
 parseProgramInstr :: Parser [Instr]
 parseProgramInstr = do
   _ <- parseDeclarations
@@ -247,14 +265,15 @@ parseProgramDecl = do
   return decls
 
 sampleProgram :: Text
-sampleProgram = "label loop; var k;\
-            \var j; \
-            \var i; \
-            \read k; \
-            \if k > 0 then begin \
-            \j:=1; i:=k; loop: \
-            \j:=j*i; \
-            \i:=i-1; \
-            \if i > 1 then goto loop; \
-            \ print j; \
-            \end;"
+sampleProgram =
+  "label loop; var k;\
+  \var j; \
+  \var i; \
+  \read k; \
+  \if k > 0 then begin \
+  \j:=1; i:=k; loop: \
+  \j:=j*i; \
+  \i:=i-1; \
+  \if i > 1 then goto loop; \
+  \ print j; \
+  \end;"
