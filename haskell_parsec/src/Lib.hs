@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant lambda" #-}
 
 module Lib
   ( Decl (..),
@@ -30,6 +32,8 @@ module Lib
 where
 
 import Control.Monad.Combinators.Expr
+import qualified Data.Text as TextPack
+import Data.Text (pack)
 import Data.Char (isAlpha)
 import Data.Functor (($>), (<&>))
 import Data.Text (Text)
@@ -38,6 +42,7 @@ import GHC.Conc (par)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+import Data.List (elemIndex)
 
 type Parser = Parsec Void Text
 
@@ -264,16 +269,64 @@ parseProgramDecl = do
   _ <- many parseSerialInstr
   return decls
 
-sampleProgram :: Text
-sampleProgram =
-  "label loop; var k;\
-  \var j; \
-  \var i; \
-  \read k; \
-  \if k > 0 then begin \
-  \j:=1; i:=k; loop: \
-  \j:=j*i; \
-  \i:=i-1; \
-  \if i > 1 then goto loop; \
-  \ print j; \
-  \end;"
+
+-- Compilation --
+
+isALabel :: Decl -> Bool
+isALabel x = case x of
+  (LabelDecl _) -> True
+  _ -> False
+
+compile :: ([Decl], [Instr]) -> Text
+compile (declarations, instructions) = undefined
+  where
+    labels = filter isALabel declarations
+    variables = filter (not . isALabel) declarations
+
+transform :: (Instr, Int) -> (Text, Int)
+transform = undefined
+
+compileConstNum :: Int -> NumExpr -> ([Text], Int)
+compileConstNum i n = case n of
+  ConstNum x -> ([ pack $ show i ++ "\tpush " ++ show x ], succ i )
+  UnaryPlus x -> ([ pack $ show i ++ "\tpush " ++ show x ], succ i )
+  _ -> error "This should never happen"
+
+compileSum :: Int -> NumExpr -> NumExpr -> ([Text], Int)
+compileSum i n1 n2 = (sumProgram, succ n2InstrCount)
+  where (n1Program, n1InstCount) = compileNumExpr i n1
+        (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
+        sumLine = pack $ show n2InstrCount ++ "\tadd" 
+        sumProgram = n1Program ++ n2Program ++ [sumLine]
+
+compileUnaryPlus :: Int -> NumExpr -> ([Text], Int)
+compileUnaryPlus = compileConstNum 
+
+compileSubtr :: Int -> NumExpr -> NumExpr -> ([Text], Int)
+compileSubtr i n1 n2 = undefined
+  where (n1Program, n1InstCount) = compileNumExpr i n1
+        (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
+        sumLine = pack $ show n2InstrCount ++ "\tsub" 
+        sumProgram = n1Program ++ n2Program ++ [sumLine]
+
+data BinaryOp = Sum_ | Subtr_ | Product_| Division_ | Modulo_
+compileBinaryOp :: BinaryOp -> Int -> NumExpr -> NumExpr -> ([Text], Int)
+compileBinaryOp o i n1 n2 = (sumProgram, succ n2InstrCount)
+  where (n1Program, n1InstCount) = compileNumExpr i n1
+        (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
+        sumLine = pack ( show n2InstrCount) <> binaryOp o
+        sumProgram = n1Program ++ n2Program ++ [sumLine]
+        binaryOp :: BinaryOp -> Text
+        binaryOp o = pack $ (<>) "\t" $ case o of
+          Sum_ -> "ADD"
+          Subtr_ -> "SUB"
+          Product_ -> "MUL"
+          Division_ -> "DIV"
+          Modulo_ -> "MOD" 
+    
+
+
+compileNumExpr :: Int -> NumExpr -> ([Text], Int) 
+compileNumExpr i e = case e of
+  ConstNum n -> compileConstNum i e
+  Sum n1 n2 -> compileSum i n1 n2
