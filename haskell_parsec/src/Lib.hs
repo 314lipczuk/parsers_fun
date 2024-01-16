@@ -286,32 +286,71 @@ compile (declarations, instructions) = undefined
 transform :: (Instr, Int) -> (Text, Int)
 transform = undefined
 
-compileConstNum :: Int -> NumExpr -> ([Text], Int)
+compileConstNum :: CompilationContext-> NumExpr -> ([Text],CompilationContext)
 compileConstNum i n = case n of
-  ConstNum x -> ([ pack $ show i ++ "\tpush " ++ show x ], succ i )
-  UnaryPlus x -> ([ pack $ show i ++ "\tpush " ++ show x ], succ i )
-  _ -> error "This should never happen"
+  ConstNum x -> ([ pack $ show i ++ "\tpush " ++ show x ], Lib.succ i )
+  UnaryPlus x -> ([ pack $ show i ++ "\tpush " ++ show x ], Lib.succ i )
+  _ -> error "Expected constNum here, got something else"
 
-compileSum :: Int -> NumExpr -> NumExpr -> ([Text], Int)
-compileSum i n1 n2 = (sumProgram, succ n2InstrCount)
-  where (n1Program, n1InstCount) = compileNumExpr i n1
-        (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
-        sumLine = pack $ show n2InstrCount ++ "\tadd" 
-        sumProgram = n1Program ++ n2Program ++ [sumLine]
-
-compileUnaryPlus :: Int -> NumExpr -> ([Text], Int)
+compileUnaryPlus :: CompilationContext -> NumExpr -> ([Text],CompilationContext)
 compileUnaryPlus = compileConstNum 
 
-compileSubtr :: Int -> NumExpr -> NumExpr -> ([Text], Int)
-compileSubtr i n1 n2 = undefined
-  where (n1Program, n1InstCount) = compileNumExpr i n1
-        (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
-        sumLine = pack $ show n2InstrCount ++ "\tsub" 
-        sumProgram = n1Program ++ n2Program ++ [sumLine]
+data CompilationContext = CompilationContext {
+  instrCount :: Int,
+  varCount :: Int,
+  varMap :: [(String, Int)]
+}
+succ :: CompilationContext -> CompilationContext
+succ c = c { instrCount = Prelude.succ $ instrCount c }
+instance Show CompilationContext where
+  show c = show $ instrCount c
+instance Num CompilationContext where
+  (+) c1 c2 = CompilationContext {
+    instrCount = instrCount c1 + instrCount c2,
+    varCount = varCount c1 + varCount c2,
+    varMap = varMap c1 ++ varMap c2
+  }
+  (*) c1 c2 = CompilationContext {
+    instrCount = instrCount c1 * instrCount c2,
+    varCount = varCount c1 * varCount c2,
+    varMap = varMap c1 ++ varMap c2
+  }
+  abs c = c
+  signum c = c
+  fromInteger i = CompilationContext {
+    instrCount = fromInteger i,
+    varCount = fromInteger i,
+    varMap = []
+  }
+  negate c = c
+
+data BindOp = ConstNum_ | IdentN_
+compileBindOp :: BindOp -> CompilationContext-> NumExpr -> ([Text],CompilationContext)
+compileBindOp o i b = undefined
+  where
+    (bProgram, instrCount) = compileNumExpr i b
+    sumLine = pack ( show instrCount) <> bindOp o
+    sumProgram = bProgram ++ [sumLine]
+    bindOp :: BindOp -> Text
+    bindOp o = pack $ (<>) "\t" $ case o of
+      ConstNum_ -> "PUSH"
+      IdentN_ -> "LOAD"
+
+data UnaryOp = UnaryPlus_ | Negation_ 
+compileUnaryOp :: UnaryOp -> CompilationContext-> NumExpr -> ([Text],CompilationContext)
+compileUnaryOp o i n = (sumProgram, Lib.succ instrCount)
+  where 
+    (nProgram, instrCount) = compileNumExpr i n
+    sumLine = pack ( show instrCount) <> unaryOp o
+    sumProgram = nProgram ++ [sumLine]
+    unaryOp :: UnaryOp -> Text
+    unaryOp o = pack $ (<>) "\t" $ case o of
+      UnaryPlus_ -> "NOP"
+      Negation_ -> "NEG"
 
 data BinaryOp = Sum_ | Subtr_ | Product_| Division_ | Modulo_
-compileBinaryOp :: BinaryOp -> Int -> NumExpr -> NumExpr -> ([Text], Int)
-compileBinaryOp o i n1 n2 = (sumProgram, succ n2InstrCount)
+compileBinaryOp :: BinaryOp -> CompilationContext-> NumExpr -> NumExpr -> ([Text],CompilationContext)
+compileBinaryOp o i n1 n2 = (sumProgram, Lib.succ n2InstrCount)
   where (n1Program, n1InstCount) = compileNumExpr i n1
         (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
         sumLine = pack ( show n2InstrCount) <> binaryOp o
@@ -324,9 +363,8 @@ compileBinaryOp o i n1 n2 = (sumProgram, succ n2InstrCount)
           Division_ -> "DIV"
           Modulo_ -> "MOD" 
     
-
-
-compileNumExpr :: Int -> NumExpr -> ([Text], Int) 
+compileNumExpr :: CompilationContext -> NumExpr -> ([Text],CompilationContext ) 
 compileNumExpr i e = case e of
   ConstNum n -> compileConstNum i e
-  Sum n1 n2 -> compileSum i n1 n2
+  Sum n1 n2 -> compileBinaryOp Sum_ i n1 n2
+  _ -> error "Not implemented yet"
