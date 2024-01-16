@@ -2,11 +2,13 @@
 
 module Main where
 
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, intersperse)
 import Lib
 import Test.Hspec
 import Test.Tasty.Hspec
 import Text.Megaparsec (eof, parse)
+import Lib (compileNumExpr, CompilationContext(..))
+import Data.Text (pack)
 
 main :: IO ()
 main = hspec spec_parseBoolExpr
@@ -52,6 +54,7 @@ spec_parseBoolExpr = do
     case parse parseBoolExpr "" "" of
       Left err -> ("ParseErrorBundle" `isPrefixOf` show err) `shouldBe` True
       Right result -> fail "Should not parse nothing"
+
   it "should parse assignment" $
     case parse parseAssignment "" "x := 1+8" of
       Left err -> fail (show err)
@@ -117,47 +120,62 @@ spec_parseBoolExpr = do
       Left err -> fail (show err)
       Right result -> result `shouldBe` [If (Relational (Greater (ConstNum 1) (IdentN "a"))) (Output (ConstNum 0)) (Just (Output (ConstNum 1)))]
 
+  it "compile simple numerical expression: 1 + a" $ do
+    let expr = Sum (ConstNum 1) (IdentN "a")
+    let compilationContext = CompilationContext {instrCount = 0, varCount= 0, varMap=["a"]}
+    let expected = (pack <$> ["0\tPUSH 1", "1\tPUSH $0", "2\tADD"],3)
+    let got = compileNumExpr compilationContext expr
+    fst got `shouldBe` fst expected
+    let showCC = show . snd
+    showCC got `shouldBe` showCC expected
+
+  it "compile more complex numerical expression -(1+a) * 4" $ do
+    let expr = Product (Negation(Sum (ConstNum 1) (IdentN "a") )) (ConstNum 4) 
+    let compilationContext = CompilationContext {instrCount = 0, varCount= 0, varMap=["a"]}
+
+    let expected = (pack <$> ["0\tPUSH 1","1\tPUSH $0","2\tADD","3\tNEG","4\tPUSH 4","5\tMUL"],6)
+    let got = compileNumExpr compilationContext expr
+    fst got `shouldBe` fst expected
+    let showCC = show . snd
+    showCC got `shouldBe` showCC expected
+
   it "should parse sample program" $
     case parse parseProgram "" sampleProgram of
       Left err -> fail (show err)
       Right result -> result `shouldBe` solution
-  where
-    sampleProgram =
-      "label loop; var k;\
-      \ var j;\
-      \ var i;\
-      \ read k;\
-      \ if k > 0 then begin\
-      \ j:=1; i:=k; loop:\
-      \ j:=j*i;\
-      \ i:=i-1;\
-      \ if i > 1 then goto loop;\
-      \  print j;\
-      \ end;"
-    solution =
-      ( [ LabelDecl (Ident "loop"),
-          VarDecl (Ident "k"),
-          VarDecl (Ident "j"),
-          VarDecl (Ident "i")
-        ],
-        [ Input (Ident "k"),
-          If
-            (Relational (Greater (IdentN "k") (ConstNum 0)))
-            ( Block
-                [ Assign (Ident "j") (ConstNum 1),
-                  Assign (Ident "i") (IdentN "k"),
-                  Tag (Ident "loop") (Assign (Ident "j") (Product (IdentN "j") (IdentN "i"))),
-                  Assign (Ident "i") (Subtr (IdentN "i") (ConstNum 1)),
-                  If
-                    (Relational (Greater (IdentN "i") (ConstNum 1)))
-                    (Goto (Ident "loop"))
-                    Nothing,
-                  Output (IdentN "j")
-                ]
-            )
-            Nothing
-        ]
-      )
-
--- todo : test blocks
--- todo : test full mutually recursive instructions
+      where
+        sampleProgram =
+          "label loop; var k;\
+          \ var j;\
+          \ var i;\
+          \ read k;\
+          \ if k > 0 then begin\
+          \ j:=1; i:=k; loop:\
+          \ j:=j*i;\
+          \ i:=i-1;\
+          \ if i > 1 then goto loop;\
+          \  print j;\
+          \ end;"
+        solution =
+          ( [ LabelDecl (Ident "loop"),
+              VarDecl (Ident "k"),
+              VarDecl (Ident "j"),
+              VarDecl (Ident "i")
+            ],
+            [ Input (Ident "k"),
+              If
+                (Relational (Greater (IdentN "k") (ConstNum 0)))
+                ( Block
+                    [ Assign (Ident "j") (ConstNum 1),
+                      Assign (Ident "i") (IdentN "k"),
+                      Tag (Ident "loop") (Assign (Ident "j") (Product (IdentN "j") (IdentN "i"))),
+                      Assign (Ident "i") (Subtr (IdentN "i") (ConstNum 1)),
+                      If
+                        (Relational (Greater (IdentN "i") (ConstNum 1)))
+                        (Goto (Ident "loop"))
+                        Nothing,
+                      Output (IdentN "j")
+                    ]
+                )
+                Nothing
+            ])

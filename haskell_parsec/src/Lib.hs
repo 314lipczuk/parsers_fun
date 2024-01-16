@@ -45,6 +45,9 @@ import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.List (elemIndex)
+import Data.List (intersperse)
+import Data.Text.Lazy (unpack)
+import qualified Data.Text.IO as Data.Text
 
 type Parser = Parsec Void Text
 
@@ -391,3 +394,10 @@ compileNumExpr i e = case e of
   Division n1 n2 -> compileBinaryOp Division_ i n1 n2
   Modulo n1 n2 -> compileBinaryOp Modulo_ i n1 n2
   _ -> error "Not implemented"
+
+printCompilationResult :: ([Text], a) -> IO ()
+printCompilationResult x = Data.Text.putStrLn y 
+  where
+    newlined = intersperse (pack "\n") (fst x)
+    y = foldl (<>) (pack "") newlined
+
