@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant lambda" #-}
+{-# HLINT ignore "Replace case with maybe" #-}
 
 module Lib
   ( Decl (..),
@@ -22,12 +23,13 @@ module Lib
     parseInstr,
     parseBoolExpr,
     parseNum,
-    parseProgram,
     parseAssignment,
     Instr (..),
     BoolExpr (..),
     NumExpr (..),
     RelationalExpr (..),
+    compileNumExpr,
+    CompilationContext(..)
   )
 where
 
@@ -298,8 +300,8 @@ compileUnaryPlus = compileConstNum
 data CompilationContext = CompilationContext {
   instrCount :: Int,
   varCount :: Int,
-  varMap :: [(String, Int)]
-}
+  varMap :: [String]
+} deriving (Eq)
 succ :: CompilationContext -> CompilationContext
 succ c = c { instrCount = Prelude.succ $ instrCount c }
 instance Show CompilationContext where
@@ -324,24 +326,38 @@ instance Num CompilationContext where
   }
   negate c = c
 
+getAddressOfVariable :: CompilationContext -> String -> Maybe Int
+getAddressOfVariable cc s = 
+  case elemIndex s $ varMap cc of
+    Just i -> Just i
+    Nothing -> Nothing
+
 data BindOp = ConstNum_ | IdentN_
 compileBindOp :: BindOp -> CompilationContext-> NumExpr -> ([Text],CompilationContext)
-compileBindOp o i b = undefined
+compileBindOp o i b = ([sumLine], Lib.succ i)
   where
-    (bProgram, instrCount) = compileNumExpr i b
-    sumLine = pack ( show instrCount) <> bindOp o
-    sumProgram = bProgram ++ [sumLine]
+    sumLine = pack (show i) <> bindOp o 
+    operation = case b of
+      ConstNum x -> show x
+      IdentN x -> case getAddressOfVariable i x of
+        Just x -> show x
+        _ -> error "Variable not found"
+      _ -> error "Expected constNum here, got something else"
     bindOp :: BindOp -> Text
     bindOp o = pack $ (<>) "\t" $ case o of
-      ConstNum_ -> "PUSH"
-      IdentN_ -> "LOAD"
+      ConstNum_ -> "PUSH " <> operation
+      IdentN_ -> "PUSH $" <> operation
 
 data UnaryOp = UnaryPlus_ | Negation_ 
-compileUnaryOp :: UnaryOp -> CompilationContext-> NumExpr -> ([Text],CompilationContext)
-compileUnaryOp o i n = (sumProgram, Lib.succ instrCount)
+compileUnaryOp :: UnaryOp -> CompilationContext -> NumExpr -> ([Text], CompilationContext)
+compileUnaryOp o i n = (sumProgram, Lib.succ ctx)
   where 
-    (nProgram, instrCount) = compileNumExpr i n
-    sumLine = pack ( show instrCount) <> unaryOp o
+    (nProgram,ctx) = compileNumExpr i unwrapped
+    unwrapped = case n of
+      UnaryPlus x -> x
+      Negation x -> x
+      _ -> error "Expected unaryPlus here, got something else"
+    sumLine = pack ( show ctx) <> unaryOp o
     sumProgram = nProgram ++ [sumLine]
     unaryOp :: UnaryOp -> Text
     unaryOp o = pack $ (<>) "\t" $ case o of
@@ -363,8 +379,15 @@ compileBinaryOp o i n1 n2 = (sumProgram, Lib.succ n2InstrCount)
           Division_ -> "DIV"
           Modulo_ -> "MOD" 
     
-compileNumExpr :: CompilationContext -> NumExpr -> ([Text],CompilationContext ) 
+compileNumExpr :: CompilationContext -> NumExpr -> ([Text],CompilationContext) 
 compileNumExpr i e = case e of
-  ConstNum n -> compileConstNum i e
+  ConstNum _ -> compileBindOp ConstNum_ i e
+  IdentN _ -> compileBindOp IdentN_ i e
+  Negation _ -> compileUnaryOp Negation_ i e
+  UnaryPlus _ -> compileUnaryOp UnaryPlus_ i e
   Sum n1 n2 -> compileBinaryOp Sum_ i n1 n2
-  _ -> error "Not implemented yet"
+  Subtr n1 n2 -> compileBinaryOp Subtr_ i n1 n2
+  Product n1 n2 -> compileBinaryOp Product_ i n1 n2
+  Division n1 n2 -> compileBinaryOp Division_ i n1 n2
+  Modulo n1 n2 -> compileBinaryOp Modulo_ i n1 n2
+  _ -> error "Not implemented"
