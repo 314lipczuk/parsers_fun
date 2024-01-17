@@ -424,7 +424,7 @@ compileBoolExpr :: CompilationContext -> BoolExpr -> ([Text], CompilationContext
 compileBoolExpr = undefined
 
 compileRelationalExpr :: CompilationContext -> RelationalExpr -> ([Text], CompilationContext)
-compileRelationalExpr cc re = undefined
+compileRelationalExpr cc re = (instructions, finalContext)
   where 
     (n1, n2, condition) = case re of 
       GreaterEquals n1 n2 -> (n1, n2, ["PUSH 1", "SUB", "JGZ @setTrue"])
@@ -440,8 +440,8 @@ compileRelationalExpr cc re = undefined
     addressOfReturn = case getAddressOfVariable n2InstrCount "ret" of 
       Just a -> a
       _ -> error "Variable ret not found"
-    instructions = ["PUSH " ++ show addressToPutInReturn, "POP" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"]
-    relLine = pack (show n2InstrCount) <> "\tCMP"
+    instructions = pack <$> ["PUSH " ++ show addressToPutInReturn, "POP" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"]
+    finalContext = foldl (\ctx i -> Lib.succ ctx) n2InstrCount instructions 
 
 -- GreaterEq -> sub -> push 1 -> sub -> jgz
 -- Greater -> sub -> jgz
