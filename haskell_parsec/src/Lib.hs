@@ -29,6 +29,8 @@ module Lib
     NumExpr (..),
     RelationalExpr (..),
     compileNumExpr,
+    compileRelationalExpr,
+    defaultContext,
     CompilationContext(..)
   )
 where
@@ -46,7 +48,7 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.List (elemIndex)
 import Data.List (intersperse)
-import Data.Text.Lazy (unpack)
+import Data.Text.Lazy (unpack, foldl')
 import qualified Data.Text.IO as Data.Text
 
 type Parser = Parsec Void Text
@@ -424,7 +426,7 @@ compileBoolExpr :: CompilationContext -> BoolExpr -> ([Text], CompilationContext
 compileBoolExpr = undefined
 
 compileRelationalExpr :: CompilationContext -> RelationalExpr -> ([Text], CompilationContext)
-compileRelationalExpr cc re = (instructions, finalContext)
+compileRelationalExpr cc re = (finalInstructions, finalContext)
   where 
     (n1, n2, condition) = case re of 
       GreaterEquals n1 n2 -> (n1, n2, ["PUSH 1", "SUB", "JGZ @setTrue"])
@@ -440,9 +442,13 @@ compileRelationalExpr cc re = (instructions, finalContext)
     addressOfReturn = case getAddressOfVariable n2InstrCount "ret" of 
       Just a -> a
       _ -> error "Variable ret not found"
-    instructions = pack <$> ["PUSH " ++ show addressToPutInReturn, "POP" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"]
+    instructions = (pack <$> ["PUSH " ++ show addressToPutInReturn, "POP $" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"])
+    instr = map countInstr (zip [instrCount n2InstrCount..] instructions )
+    finalInstructions = n1Program <> n2Program <> instr
     finalContext = foldl (\ctx i -> Lib.succ ctx) n2InstrCount instructions 
 
+countInstr :: (Int , Text) -> Text
+countInstr (num, instr) =  (pack . show) num <> "\t" <> instr
 -- GreaterEq -> sub -> push 1 -> sub -> jgz
 -- Greater -> sub -> jgz
 -- Less-> sub -> jlz

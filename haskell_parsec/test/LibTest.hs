@@ -7,7 +7,7 @@ import Lib
 import Test.Hspec
 import Test.Tasty.Hspec
 import Text.Megaparsec (eof, parse)
-import Lib (compileNumExpr, CompilationContext(..))
+import Lib (compileNumExpr, CompilationContext(..), compileRelationalExpr)
 import Data.Text (pack)
 
 main :: IO ()
@@ -134,6 +134,15 @@ spec_parseBoolExpr = do
     let compilationContext = CompilationContext {instrCount = 0, varCount= 0, varMap=["a"]}
     let expected = (pack <$> ["0\tPUSH 1","1\tPUSH $0","2\tADD","3\tNEG","4\tPUSH 4","5\tMUL"],6)
     let got = compileNumExpr compilationContext expr
+    fst got `shouldBe` fst expected
+    let showCC = show . snd
+    showCC got `shouldBe` showCC expected
+
+  it "compiles relational expr - first stage" $ do
+    let expr = GreaterEquals (ConstNum 4) (ConstNum 8) 
+    let compilationContext = CompilationContext {instrCount = 5, varCount= 0, varMap=["ret"]}
+    let expected = (pack <$> ["5\tPUSH 4","6\tPUSH 8","7\tPUSH 14","8\tPOP $0", "9\tSUB","10\tPUSH 1","11\tSUB","12\tJGZ @setTrue","13\tJMP @setFalse"],14)
+    let got = compileRelationalExpr compilationContext expr
     fst got `shouldBe` fst expected
     let showCC = show . snd
     showCC got `shouldBe` showCC expected
