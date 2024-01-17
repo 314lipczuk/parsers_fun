@@ -401,3 +401,78 @@ printCompilationResult x = Data.Text.putStrLn y
     newlined = intersperse (pack "\n") (fst x)
     y = foldl (<>) (pack "") newlined
 
+
+compileAssignment :: CompilationContext -> Instr -> ([Text], CompilationContext)
+compileAssignment cc i = (sumProgram, Lib.succ ctx1)
+  where 
+    (ident, ne) = case i of  
+      Assign x ne -> (x, ne)
+      _ -> error "Expected assignment here, got something else"
+    Ident identKey = ident
+    (progNe, ctx1 ) = compileNumExpr cc ne
+    address = case  getAddressOfVariable ctx1 identKey of
+      Just a -> a
+      _ -> error "Variable not found"
+    
+    sumLine = pack (show ctx1) <> "\tPOP $" <> pack (show address)
+    sumProgram = progNe ++ [sumLine]
+
+compileIf :: CompilationContext -> BoolExpr -> Instr -> Maybe Instr -> ([Text], CompilationContext)
+compileIf = undefined
+
+compileBoolExpr :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
+compileBoolExpr = undefined
+
+compileRelationalExpr :: CompilationContext -> RelationalExpr -> ([Text], CompilationContext)
+compileRelationalExpr cc re = undefined
+  where 
+    (n1, n2, condition) = case re of 
+      GreaterEquals n1 n2 -> (n1, n2, ["PUSH 1", "SUB", "JGZ @setTrue"])
+      Greater n1 n2 -> (n1, n2, ["JGZ @setTrue"])
+      LessEquals n1 n2 -> (n1, n2, ["PUSH 1", "SUB", "JLZ @setTrue" ] )
+      Less n1 n2 -> (n1, n2, [ "JLZ @setTrue" ])
+      Equals n1 n2 -> (n1, n2, ["JZ @setTrue"])
+      NotEquals n1 n2 -> (n1, n2, ["JNZ @setTrue"])
+      _ -> error "Expected relational expression here, got something else"
+    (n1Program, n1InstCount) = compileNumExpr cc n1 
+    (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
+    addressToPutInReturn = instrCount n2InstrCount + length condition + 4
+    addressOfReturn = case getAddressOfVariable n2InstrCount "ret" of 
+      Just a -> a
+      _ -> error "Variable ret not found"
+    instructions = ["PUSH " ++ show addressToPutInReturn, "POP" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"]
+    relLine = pack (show n2InstrCount) <> "\tCMP"
+
+-- GreaterEq -> sub -> push 1 -> sub -> jgz
+-- Greater -> sub -> jgz
+-- Less-> sub -> jlz
+-- LessEq-> sub -> push 1 -> sub -> jlz
+-- Eq -> sub -> jz
+-- Neq -> sub -> jnz
+
+-- in reg: 13
+
+-- 12 push 1
+-- 13 PUSH retaddr
+-- 14 POP retaddr
+-- 15 SUB
+-- 16 JGZ | 16 PUSH 1 -> 17 SUB -> 18 JGZ setTrue
+--15|19 JMP setFalse
+-- # after jump, should have 1 or 0 on stack as true or false
+-- 18 | 20 nop
+
+-- wiec zeby skoczyć dobrze, muszę dać $CURRENT + LEN(DYNAMIC) + 4
+
+booleanLabels :: CompilationContext -> ([Text], CompilationContext)
+booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
+  where
+    content = ["POP", "PUSH 1", "JMP @ret", "POP", "PUSH 0", "JMP @ret"] 
+    numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] content
+    countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
+
+defaultContext :: CompilationContext
+defaultContext = CompilationContext {
+  instrCount = 0,
+  varCount = 0,
+  varMap = ["ret"]
+}

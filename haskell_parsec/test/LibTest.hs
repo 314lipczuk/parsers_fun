@@ -129,10 +129,9 @@ spec_parseBoolExpr = do
     let showCC = show . snd
     showCC got `shouldBe` showCC expected
 
-  it "compile more complex numerical expression -(1+a) * 4" $ do
+  it "compile more complex numerical expression: -(1+a) * 4" $ do
     let expr = Product (Negation(Sum (ConstNum 1) (IdentN "a") )) (ConstNum 4) 
     let compilationContext = CompilationContext {instrCount = 0, varCount= 0, varMap=["a"]}
-
     let expected = (pack <$> ["0\tPUSH 1","1\tPUSH $0","2\tADD","3\tNEG","4\tPUSH 4","5\tMUL"],6)
     let got = compileNumExpr compilationContext expr
     fst got `shouldBe` fst expected
