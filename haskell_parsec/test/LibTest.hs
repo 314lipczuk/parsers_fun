@@ -187,3 +187,15 @@ spec_parseBoolExpr = do
                 )
                 Nothing
             ])
+
+
+
+
+
+
+
+
+-- [ ] <-
+-- push 1 : [ 1 ] <-
+-- push 2 : [ 1, 2 ] <-
+-- add : [ 3 ] <-

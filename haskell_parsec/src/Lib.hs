@@ -2,6 +2,8 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant lambda" #-}
 {-# HLINT ignore "Replace case with maybe" #-}
+{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Lib
   ( Decl (..),
@@ -172,6 +174,7 @@ data Instr
   | Input Ident
   | Tag Ident Instr
   | Return
+  | Exit
   deriving (Eq, Ord, Show)
 
 -- nie ma za duzo o tym jak ma dzialac return. Wiec zakladam, ze jest to zwykla instrukcja
@@ -188,6 +191,9 @@ parseInstr =
 
 parseReturn :: Parser Instr
 parseReturn = symbol "return" >> return Return
+
+parseExit :: Parser Instr
+parseExit = symbol "exit" >> return Exit
 
 parseAssignment :: Parser Instr
 parseAssignment = do
@@ -300,7 +306,7 @@ compileConstNum i n = case n of
   _ -> error "Expected constNum here, got something else"
 
 compileUnaryPlus :: CompilationContext -> NumExpr -> ([Text],CompilationContext)
-compileUnaryPlus = compileConstNum 
+compileUnaryPlus = compileConstNum
 
 data CompilationContext = CompilationContext {
   instrCount :: Int,
@@ -311,6 +317,13 @@ succ :: CompilationContext -> CompilationContext
 succ c = c { instrCount = Prelude.succ $ instrCount c }
 instance Show CompilationContext where
   show c = show $ instrCount c
+
+instance Enum CompilationContext where
+  toEnum :: Int -> CompilationContext
+  toEnum = _
+  fromEnum :: CompilationContext -> Int
+  fromEnum = _
+
 instance Num CompilationContext where
   (+) c1 c2 = CompilationContext {
     instrCount = instrCount c1 + instrCount c2,
@@ -332,7 +345,7 @@ instance Num CompilationContext where
   negate c = c
 
 getAddressOfVariable :: CompilationContext -> String -> Maybe Int
-getAddressOfVariable cc s = 
+getAddressOfVariable cc s =
   case elemIndex s $ varMap cc of
     Just i -> Just i
     Nothing -> Nothing
@@ -341,7 +354,7 @@ data BindOp = ConstNum_ | IdentN_
 compileBindOp :: BindOp -> CompilationContext-> NumExpr -> ([Text],CompilationContext)
 compileBindOp o i b = ([sumLine], Lib.succ i)
   where
-    sumLine = pack (show i) <> bindOp o 
+    sumLine = pack (show i) <> bindOp o
     operation = case b of
       ConstNum x -> show x
       IdentN x -> case getAddressOfVariable i x of
@@ -353,10 +366,10 @@ compileBindOp o i b = ([sumLine], Lib.succ i)
       ConstNum_ -> "PUSH " <> operation
       IdentN_ -> "PUSH $" <> operation
 
-data UnaryOp = UnaryPlus_ | Negation_ 
+data UnaryOp = UnaryPlus_ | Negation_
 compileUnaryOp :: UnaryOp -> CompilationContext -> NumExpr -> ([Text], CompilationContext)
 compileUnaryOp o i n = (sumProgram, Lib.succ ctx)
-  where 
+  where
     (nProgram,ctx) = compileNumExpr i unwrapped
     unwrapped = case n of
       UnaryPlus x -> x
@@ -369,11 +382,11 @@ compileUnaryOp o i n = (sumProgram, Lib.succ ctx)
       UnaryPlus_ -> "NOP"
       Negation_ -> "NEG"
 
-data BinaryOp = Sum_ | Subtr_ | Product_| Division_ | Modulo_
-compileBinaryOp :: BinaryOp -> CompilationContext-> NumExpr -> NumExpr -> ([Text],CompilationContext)
+data BinaryOp = Sum_ | Subtr_ | Product_ | Division_ | Modulo_
+compileBinaryOp :: BinaryOp -> CompilationContext -> NumExpr -> NumExpr -> ([Text],CompilationContext)
 compileBinaryOp o i n1 n2 = (sumProgram, Lib.succ n2InstrCount)
   where (n1Program, n1InstCount) = compileNumExpr i n1
-        (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
+        (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2
         sumLine = pack ( show n2InstrCount) <> binaryOp o
         sumProgram = n1Program ++ n2Program ++ [sumLine]
         binaryOp :: BinaryOp -> Text
@@ -382,9 +395,9 @@ compileBinaryOp o i n1 n2 = (sumProgram, Lib.succ n2InstrCount)
           Subtr_ -> "SUB"
           Product_ -> "MUL"
           Division_ -> "DIV"
-          Modulo_ -> "MOD" 
-    
-compileNumExpr :: CompilationContext -> NumExpr -> ([Text],CompilationContext) 
+          Modulo_ -> "MOD"
+
+compileNumExpr :: CompilationContext -> NumExpr -> ([Text],CompilationContext)
 compileNumExpr i e = case e of
   ConstNum _ -> compileBindOp ConstNum_ i e
   IdentN _ -> compileBindOp IdentN_ i e
@@ -398,7 +411,7 @@ compileNumExpr i e = case e of
   _ -> error "Not implemented"
 
 printCompilationResult :: ([Text], a) -> IO ()
-printCompilationResult x = Data.Text.putStrLn y 
+printCompilationResult x = Data.Text.putStrLn y
   where
     newlined = intersperse (pack "\n") (fst x)
     y = foldl (<>) (pack "") newlined
@@ -406,8 +419,8 @@ printCompilationResult x = Data.Text.putStrLn y
 
 compileAssignment :: CompilationContext -> Instr -> ([Text], CompilationContext)
 compileAssignment cc i = (sumProgram, Lib.succ ctx1)
-  where 
-    (ident, ne) = case i of  
+  where
+    (ident, ne) = case i of
       Assign x ne -> (x, ne)
       _ -> error "Expected assignment here, got something else"
     Ident identKey = ident
@@ -415,20 +428,15 @@ compileAssignment cc i = (sumProgram, Lib.succ ctx1)
     address = case  getAddressOfVariable ctx1 identKey of
       Just a -> a
       _ -> error "Variable not found"
-    
+
     sumLine = pack (show ctx1) <> "\tPOP $" <> pack (show address)
     sumProgram = progNe ++ [sumLine]
 
-compileIf :: CompilationContext -> BoolExpr -> Instr -> Maybe Instr -> ([Text], CompilationContext)
-compileIf = undefined
-
-compileBoolExpr :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
-compileBoolExpr = undefined
 
 compileRelationalExpr :: CompilationContext -> RelationalExpr -> ([Text], CompilationContext)
 compileRelationalExpr cc re = (finalInstructions, finalContext)
-  where 
-    (n1, n2, condition) = case re of 
+  where
+    (n1, n2, condition) = case re of
       GreaterEquals n1 n2 -> (n1, n2, ["PUSH 1", "SUB", "JGZ @setTrue"])
       Greater n1 n2 -> (n1, n2, ["JGZ @setTrue"])
       LessEquals n1 n2 -> (n1, n2, ["PUSH 1", "SUB", "JLZ @setTrue" ] )
@@ -436,19 +444,26 @@ compileRelationalExpr cc re = (finalInstructions, finalContext)
       Equals n1 n2 -> (n1, n2, ["JZ @setTrue"])
       NotEquals n1 n2 -> (n1, n2, ["JNZ @setTrue"])
       _ -> error "Expected relational expression here, got something else"
-    (n1Program, n1InstCount) = compileNumExpr cc n1 
-    (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2 
+    (n1Program, n1InstCount) = compileNumExpr cc n1
+    (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2
     addressToPutInReturn = instrCount n2InstrCount + length condition + 4
-    addressOfReturn = case getAddressOfVariable n2InstrCount "ret" of 
+    addressOfReturn = case getAddressOfVariable n2InstrCount "ret" of
       Just a -> a
       _ -> error "Variable ret not found"
     instructions = (pack <$> ["PUSH " ++ show addressToPutInReturn, "POP $" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"])
     instr = map countInstr (zip [instrCount n2InstrCount..] instructions )
     finalInstructions = n1Program <> n2Program <> instr
-    finalContext = foldl (\ctx i -> Lib.succ ctx) n2InstrCount instructions 
+    finalContext = foldl (\ctx i -> Lib.succ ctx) n2InstrCount instructions
 
 countInstr :: (Int , Text) -> Text
 countInstr (num, instr) =  (pack . show) num <> "\t" <> instr
+
+-- a b
+-- push a push b
+-- [a b]
+-- mnozenie
+-- [a*b]
+
 -- GreaterEq -> sub -> push 1 -> sub -> jgz
 -- Greater -> sub -> jgz
 -- Less-> sub -> jlz
@@ -472,7 +487,7 @@ countInstr (num, instr) =  (pack . show) num <> "\t" <> instr
 booleanLabels :: CompilationContext -> ([Text], CompilationContext)
 booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
   where
-    content = ["POP", "PUSH 1", "JMP @ret", "POP", "PUSH 0", "JMP @ret"] 
+    content = ["POP", "PUSH 1", "JMP @ret", "POP", "PUSH 0", "JMP @ret"]
     numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] content
     countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
 
@@ -482,3 +497,118 @@ defaultContext = CompilationContext {
   varCount = 0,
   varMap = ["ret"]
 }
+
+compileIOandCtrl :: CompilationContext -> Instr -> ([Text], CompilationContext)
+compileIOandCtrl cc i= ([pack instr], Lib.succ cc)
+  where
+    (ioType) = case i of
+      Input _ -> "READ"
+      Output _ -> "PRINT"
+      Exit ->   "STOP"
+      _ -> error "Expected IO instruction here, got something else"
+    instr =show cc <> "\t" <> ioType
+
+compileBlock :: CompilationContext -> Instr -> ([Text], CompilationContext)
+compileBlock cc i = undefined
+  where
+    instructions = case i of
+      Block x-> x
+      _ -> error "Expected block here, got something else"
+    (instrs, ctx) = foldl (\(instrs, ctx) i -> let (instr, ctx1) = compileInstr ctx i in (instrs ++ instr, ctx1)) ([], cc) instructions
+
+
+data BinaryBoolExpr = And_ | Or_
+compileBinaryBoolExpr :: BinaryBoolExpr -> CompilationContext -> BoolExpr -> BoolExpr -> ([Text], CompilationContext)
+compileBinaryBoolExpr t cc be1 be2 = (fullInstr, fullCtx)
+  where
+    (program1, ctx1) = compileBoolExpr cc be1
+    (program2, ctx2) = compileBoolExpr ctx1 be2
+    binInstr = case t of
+      And_ -> "MUL"
+      Or_ -> "ADD"
+      _ -> error "Expected binary bool expr here, got something else"
+    fullInstr = program1 ++ program2 ++ (pack <$> [ show ctx2 <> "\t" <> binInstr, show (Lib.succ ctx2) <> "\tJNZ @setTrue", show (Lib.succ $ Lib.succ ctx2) <> "\tJMP @setFalse"])
+    fullCtx = Lib.succ $ Lib.succ ctx2
+    -- bug - is True and False 0 and 1 or -1 and 1?
+
+compileBoolNot :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
+compileBoolNot cc be = (fullInstr, finalContext)
+  where
+    (program, ctx) = compileBoolExpr cc be
+    negationInstr = ["PUSH -1", "add", "neg"]
+    numberedConverstionInstr = fmap (\(instr, ct) -> pack $ show ct <> "\t" <> instr) (zip negationInstr (show <$> [ctx..]))
+    fullInstr = program ++ numberedConverstionInstr
+    finalContext = iterate Lib.succ ctx !! length negationInstr
+
+compileConstBool :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
+compileConstBool ctx be = ([instr], Lib.succ ctx)
+  where
+    val = case be of 
+      ConstBool x -> if x then "1" else "0"
+      _ -> error "Expected const bool here, got something else"
+    instr = pack $ show ctx <> "\tPUSH " <> val
+
+compileBoolIdent :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
+compileBoolIdent ctx be = ([instr], Lib.succ ctx)
+  where
+    val = case be of 
+      IdentB x -> x
+      _ -> error "Expected const bool here, got something else"
+    address = case getAddressOfVariable ctx val of
+      Just a -> a
+      _ -> error "Variable not found"
+    instr = pack $ show ctx <> "\tPUSH $" <> val
+
+compileBoolExpr :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
+compileBoolExpr cc be = case be of
+  ConstBool _ -> compileConstBool cc be
+  IdentB _ -> compileBoolIdent cc be
+  Not _ -> compileBoolNot cc be
+  And be1 be2 -> compileBinaryBoolExpr And_ cc be1 be2
+  Or be1 be2 -> compileBinaryBoolExpr Or_ cc be1 be2
+  Relational _ -> compileRelationalExpr cc rel
+    where rel = case be of
+            Relational x -> x
+            _ -> error "Expected relational expr here, got something else"
+  _ -> error "Expected bool expr here, got something else"
+
+compileIf :: CompilationContext -> BoolExpr -> Instr -> Maybe Instr -> ([Text], CompilationContext)
+compileIf cc be firstForm optionalSecondForm =
+  case optionalSecondForm of
+    Just secondForm -> compileIfElse cc be firstForm secondForm
+    Nothing -> compileRawIf cc be firstForm
+
+compileRawIf :: CompilationContext -> BoolExpr -> Instr -> ([Text], CompilationContext)
+compileRawIf cc be i = (fullProgram, ctxAfterInstr)
+  where
+    (bEProgram, ctxAfterBE) = compileBoolExpr cc be
+    (instrProgram, ctxAfterInstr) = compileInstr (Lib.succ ctxAfterBE) i
+    jumpToTheEnd::[Text] 
+    jumpToTheEnd = [ pack $ show ctxAfterInstr <> "\tJZ $" <> show ctxAfterInstr]
+    fullProgram = bEProgram <> jumpToTheEnd <> instrProgram
+
+compileIfElse :: CompilationContext -> BoolExpr -> Instr -> Instr -> ([Text], CompilationContext)
+compileIfElse cc be a b = (fullProgram, ctxAfterInstrB)
+  where
+    (bEProgram, ctxAfterBE) = compileBoolExpr cc be
+    (instrProgramA, ctxAfterInstrA) = compileInstr (Lib.succ ctxAfterBE) a
+    (instrProgramB, ctxAfterInstrB) = compileInstr (Lib.succ ctxAfterInstrA) b
+    jumpConditional::[Text] 
+    jumpConditional = [ pack $ show ctxAfterBE <> "\tJZ $" <> show positionB]
+    jumpToFinish::[Text]
+    jumpToFinish = [ pack $ show ctxAfterInstrA <> "\tJMP $" <> show ctxAfterInstrB]
+    positionB :: CompilationContext
+    positionB = Lib.succ ctxAfterInstrA 
+    fullProgram = bEProgram <> jumpConditional <> instrProgramA <> jumpToFinish <> instrProgramB
+
+compileTag :: CompilationContext -> Ident -> Instr -> ([Text], CompilationContext)
+compileTag = undefined
+
+compileGoto :: CompilationContext -> Ident -> ([Text], CompilationContext)
+compileGoto = undefined
+
+compileInstr :: CompilationContext -> Instr -> ([Text], CompilationContext)
+compileInstr = undefined
+
+compileDecl :: CompilationContext -> Decl -> ([Text], CompilationContext)
+compileDecl = undefined
