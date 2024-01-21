@@ -6,9 +6,10 @@ import Data.List (isPrefixOf, intersperse)
 import Lib
 import Test.Hspec
 import Test.Tasty.Hspec
-import Text.Megaparsec (eof, parse)
+import Text.Megaparsec (eof, parse, errorBundlePretty)
 import Lib (compileNumExpr, CompilationContext(..), compileRelationalExpr)
 import Data.Text (pack)
+import Data.Text.IO (readFile)
 
 main :: IO ()
 main = hspec spec_parseBoolExpr
@@ -122,7 +123,7 @@ spec_parseBoolExpr = do
 
   it "compile simple numerical expression: 1 + a" $ do
     let expr = Sum (ConstNum 1) (IdentN "a")
-    let compilationContext = CompilationContext {instrCount = 0, varCount= 0, varMap=["a"]}
+    let compilationContext = CompilationContext {instrCount = 0, labelMap=[], varMap=["a"]}
     let expected = (pack <$> ["0\tPUSH 1", "1\tPUSH $0", "2\tADD"],3)
     let got = compileNumExpr compilationContext expr
     fst got `shouldBe` fst expected
@@ -131,7 +132,7 @@ spec_parseBoolExpr = do
 
   it "compile more complex numerical expression: -(1+a) * 4" $ do
     let expr = Product (Negation(Sum (ConstNum 1) (IdentN "a") )) (ConstNum 4) 
-    let compilationContext = CompilationContext {instrCount = 0, varCount= 0, varMap=["a"]}
+    let compilationContext = CompilationContext {instrCount = 0, labelMap=[], varMap=["a"]}
     let expected = (pack <$> ["0\tPUSH 1","1\tPUSH $0","2\tADD","3\tNEG","4\tPUSH 4","5\tMUL"],6)
     let got = compileNumExpr compilationContext expr
     fst got `shouldBe` fst expected
@@ -140,12 +141,40 @@ spec_parseBoolExpr = do
 
   it "compiles relational expr - first stage" $ do
     let expr = GreaterEquals (ConstNum 4) (ConstNum 8) 
-    let compilationContext = CompilationContext {instrCount = 5, varCount= 0, varMap=["ret"]}
+    let compilationContext = CompilationContext {instrCount = 5, labelMap=[], varMap=["ret"]}
     let expected = (pack <$> ["5\tPUSH 4","6\tPUSH 8","7\tPUSH 14","8\tPOP $0", "9\tSUB","10\tPUSH 1","11\tSUB","12\tJGZ @setTrue","13\tJMP @setFalse"],14)
     let got = compileRelationalExpr compilationContext expr
     fst got `shouldBe` fst expected
     let showCC = show . snd
     showCC got `shouldBe` showCC expected
+
+  it "should parse sample program from file" $ do
+    file <- Data.Text.IO.readFile "test/testfile1.txt"
+    case parse parseProgram "" file of
+      Left err -> fail (errorBundlePretty err)
+      Right result -> result `shouldBe`
+          ( [ LabelDecl (Ident "loop"),
+              VarDecl (Ident "k"),
+              VarDecl (Ident "j"),
+              VarDecl (Ident "i")
+            ],
+            [ Input (Ident "k"),
+              If
+                (Relational (Greater (IdentN "k") (ConstNum 0)))
+                ( Block
+                    [ Assign (Ident "j") (ConstNum 1),
+                      Assign (Ident "i") (IdentN "k"),
+                      Tag (Ident "loop") (Assign (Ident "j") (Product (IdentN "j") (IdentN "i"))),
+                      Assign (Ident "i") (Subtr (IdentN "i") (ConstNum 1)),
+                      If
+                        (Relational (Greater (IdentN "i") (ConstNum 1)))
+                        (Goto (Ident "loop"))
+                        Nothing,
+                      Output (IdentN "j")
+                    ]
+                )
+                Nothing
+            ])
 
   it "should parse sample program" $
     case parse parseProgram "" sampleProgram of

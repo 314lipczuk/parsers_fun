@@ -4,6 +4,8 @@
 {-# HLINT ignore "Replace case with maybe" #-}
 {-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE InstanceSigs #-}
+{-# HLINT ignore "Use replicate" #-}
+{-# HLINT ignore "Use zipWith" #-}
 
 module Lib
   ( Decl (..),
@@ -52,6 +54,7 @@ import Data.List (elemIndex)
 import Data.List (intersperse)
 import Data.Text.Lazy (unpack, foldl')
 import qualified Data.Text.IO as Data.Text
+import Data.Tuple (swap)
 
 type Parser = Parsec Void Text
 
@@ -291,13 +294,22 @@ isALabel x = case x of
   _ -> False
 
 compile :: ([Decl], [Instr]) -> Text
-compile (declarations, instructions) = undefined
+compile (declarations, instructions) = stage1
   where
-    labels = filter isALabel declarations
-    variables = filter (not . isALabel) declarations
+    (text, initialConfig) = compileDecl declarations
+    (text2, finalConfig) = foldl (\(text, config) instr -> let (newText, newConfig) = compileInstr config instr in (text <> newText, newConfig)) (text, initialConfig) instructions
+    stage1 = foldl (<>) (pack "") (intersperse (pack "\n") text2)
 
-transform :: (Instr, Int) -> (Text, Int)
-transform = undefined
+    -- newlined = intersperse (pack "\n") (fst x)
+    -- y = foldl (<>) (pack "") newlined
+
+readAndCompile :: IO ()
+readAndCompile = do
+  input <- readFile "./test/testfile1.txt" 
+  let parsed = parse parseProgram "" (pack input)
+  case parsed of 
+    Left err -> print err
+    Right o -> Data.Text.putStrLn $  compile o
 
 compileConstNum :: CompilationContext-> NumExpr -> ([Text],CompilationContext)
 compileConstNum i n = case n of
@@ -310,7 +322,7 @@ compileUnaryPlus = compileConstNum
 
 data CompilationContext = CompilationContext {
   instrCount :: Int,
-  varCount :: Int,
+  labelMap:: [(Int, String)],
   varMap :: [String]
 } deriving (Eq)
 succ :: CompilationContext -> CompilationContext
@@ -320,26 +332,26 @@ instance Show CompilationContext where
 
 instance Enum CompilationContext where
   toEnum :: Int -> CompilationContext
-  toEnum = _
+  toEnum = undefined
   fromEnum :: CompilationContext -> Int
-  fromEnum = _
+  fromEnum = undefined
 
 instance Num CompilationContext where
   (+) c1 c2 = CompilationContext {
     instrCount = instrCount c1 + instrCount c2,
-    varCount = varCount c1 + varCount c2,
+    labelMap= labelMap c1 ++ labelMap c2,
     varMap = varMap c1 ++ varMap c2
   }
   (*) c1 c2 = CompilationContext {
     instrCount = instrCount c1 * instrCount c2,
-    varCount = varCount c1 * varCount c2,
+     labelMap= labelMap c1 ,
     varMap = varMap c1 ++ varMap c2
   }
   abs c = c
   signum c = c
   fromInteger i = CompilationContext {
     instrCount = fromInteger i,
-    varCount = fromInteger i,
+    labelMap= [],
     varMap = []
   }
   negate c = c
@@ -359,7 +371,7 @@ compileBindOp o i b = ([sumLine], Lib.succ i)
       ConstNum x -> show x
       IdentN x -> case getAddressOfVariable i x of
         Just x -> show x
-        _ -> error "Variable not found"
+        _ -> "@" <> x  
       _ -> error "Expected constNum here, got something else"
     bindOp :: BindOp -> Text
     bindOp o = pack $ (<>) "\t" $ case o of
@@ -425,11 +437,11 @@ compileAssignment cc i = (sumProgram, Lib.succ ctx1)
       _ -> error "Expected assignment here, got something else"
     Ident identKey = ident
     (progNe, ctx1 ) = compileNumExpr cc ne
-    address = case  getAddressOfVariable ctx1 identKey of
-      Just a -> a
-      _ -> error "Variable not found"
+    address = case getAddressOfVariable ctx1 identKey of
+      Just a -> show a
+      _ -> "@" <> identKey 
 
-    sumLine = pack (show ctx1) <> "\tPOP $" <> pack (show address)
+    sumLine = pack (show ctx1) <> "\tPOP $" <> pack  address
     sumProgram = progNe ++ [sumLine]
 
 
@@ -450,7 +462,7 @@ compileRelationalExpr cc re = (finalInstructions, finalContext)
     addressOfReturn = case getAddressOfVariable n2InstrCount "ret" of
       Just a -> a
       _ -> error "Variable ret not found"
-    instructions = (pack <$> ["PUSH " ++ show addressToPutInReturn, "POP $" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"])
+    instructions = pack <$> ["PUSH " ++ show addressToPutInReturn, "POP $" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"]
     instr = map countInstr (zip [instrCount n2InstrCount..] instructions )
     finalInstructions = n1Program <> n2Program <> instr
     finalContext = foldl (\ctx i -> Lib.succ ctx) n2InstrCount instructions
@@ -491,13 +503,6 @@ booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
     numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] content
     countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
 
-defaultContext :: CompilationContext
-defaultContext = CompilationContext {
-  instrCount = 0,
-  varCount = 0,
-  varMap = ["ret"]
-}
-
 compileIOandCtrl :: CompilationContext -> Instr -> ([Text], CompilationContext)
 compileIOandCtrl cc i= ([pack instr], Lib.succ cc)
   where
@@ -509,13 +514,12 @@ compileIOandCtrl cc i= ([pack instr], Lib.succ cc)
     instr =show cc <> "\t" <> ioType
 
 compileBlock :: CompilationContext -> Instr -> ([Text], CompilationContext)
-compileBlock cc i = undefined
+compileBlock cc i = (instrs, ctx)
   where
     instructions = case i of
       Block x-> x
       _ -> error "Expected block here, got something else"
     (instrs, ctx) = foldl (\(instrs, ctx) i -> let (instr, ctx1) = compileInstr ctx i in (instrs ++ instr, ctx1)) ([], cc) instructions
-
 
 data BinaryBoolExpr = And_ | Or_
 compileBinaryBoolExpr :: BinaryBoolExpr -> CompilationContext -> BoolExpr -> BoolExpr -> ([Text], CompilationContext)
@@ -543,7 +547,7 @@ compileBoolNot cc be = (fullInstr, finalContext)
 compileConstBool :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
 compileConstBool ctx be = ([instr], Lib.succ ctx)
   where
-    val = case be of 
+    val = case be of
       ConstBool x -> if x then "1" else "0"
       _ -> error "Expected const bool here, got something else"
     instr = pack $ show ctx <> "\tPUSH " <> val
@@ -551,7 +555,7 @@ compileConstBool ctx be = ([instr], Lib.succ ctx)
 compileBoolIdent :: CompilationContext -> BoolExpr -> ([Text], CompilationContext)
 compileBoolIdent ctx be = ([instr], Lib.succ ctx)
   where
-    val = case be of 
+    val = case be of
       IdentB x -> x
       _ -> error "Expected const bool here, got something else"
     address = case getAddressOfVariable ctx val of
@@ -583,7 +587,7 @@ compileRawIf cc be i = (fullProgram, ctxAfterInstr)
   where
     (bEProgram, ctxAfterBE) = compileBoolExpr cc be
     (instrProgram, ctxAfterInstr) = compileInstr (Lib.succ ctxAfterBE) i
-    jumpToTheEnd::[Text] 
+    jumpToTheEnd::[Text]
     jumpToTheEnd = [ pack $ show ctxAfterInstr <> "\tJZ $" <> show ctxAfterInstr]
     fullProgram = bEProgram <> jumpToTheEnd <> instrProgram
 
@@ -593,22 +597,84 @@ compileIfElse cc be a b = (fullProgram, ctxAfterInstrB)
     (bEProgram, ctxAfterBE) = compileBoolExpr cc be
     (instrProgramA, ctxAfterInstrA) = compileInstr (Lib.succ ctxAfterBE) a
     (instrProgramB, ctxAfterInstrB) = compileInstr (Lib.succ ctxAfterInstrA) b
-    jumpConditional::[Text] 
+    jumpConditional::[Text]
     jumpConditional = [ pack $ show ctxAfterBE <> "\tJZ $" <> show positionB]
     jumpToFinish::[Text]
     jumpToFinish = [ pack $ show ctxAfterInstrA <> "\tJMP $" <> show ctxAfterInstrB]
     positionB :: CompilationContext
-    positionB = Lib.succ ctxAfterInstrA 
+    positionB = Lib.succ ctxAfterInstrA
     fullProgram = bEProgram <> jumpConditional <> instrProgramA <> jumpToFinish <> instrProgramB
 
 compileTag :: CompilationContext -> Ident -> Instr -> ([Text], CompilationContext)
-compileTag = undefined
+compileTag cc id instr = ([], newCtx)
+  where
+    newCtx = CompilationContext{
+      instrCount = instrCount cc,
+      labelMap = (instrCount cc, show id) : labelMap cc,
+      varMap = varMap cc
+    }
+
+getAddressOfLabel :: CompilationContext -> Ident -> Maybe Int
+getAddressOfLabel cc idn = lookup (show idn) $ fmap swap (labelMap cc)
 
 compileGoto :: CompilationContext -> Ident -> ([Text], CompilationContext)
-compileGoto = undefined
+compileGoto cc i = ([instr], Lib.succ cc)
+  where
+    str = case i of
+      Ident x -> x
+      _ -> error "Expected ident here, got something else"
+    address = case getAddressOfLabel cc i of
+      Just a -> show a
+      _ -> "@" <> str
+    instr = pack $ show cc <> "\tJMP " <> show address
+
+compileGosub :: CompilationContext -> Ident -> ([Text], CompilationContext)
+compileGosub cc i = (instr, finalCtx)
+  where
+    str = case i of
+      Ident x -> x
+      _ -> error "Expected ident here, got something else"
+    address = case getAddressOfLabel cc i of
+      Just a -> show a
+      _ -> "@" <> str
+    finalCtx = iterate Lib.succ cc !! 2
+    instr = pack <$> [ show cc <> "\tPUSH " <> show finalCtx , show (Lib.succ cc) <> "\tJMP " <> address]
+
+compileReturn :: CompilationContext -> ([Text], CompilationContext)
+compileReturn cc = (instr,finalCtx)
+  where
+    instr = pack <$> ( map (\(i,c) -> show c <> "\t" <> i) $ zip [ "pop $" <> returnRegister, "jmp" ] (iterate Lib.succ cc))
+    finalCtx = iterate Lib.succ cc !! length instr
+    returnRegister = case getAddressOfVariable cc "ret" of
+      Just a -> show a
+      _ -> error "Variable ret not found"
 
 compileInstr :: CompilationContext -> Instr -> ([Text], CompilationContext)
-compileInstr = undefined
+compileInstr cc instr =
+  case instr of
+    Assign _ _ -> compileAssignment cc instr
+    If be i1 i2 -> compileIf cc be i1 i2
+    Goto i -> compileGoto cc i
+    Gosub i -> compileGosub cc i
+    Block _ -> compileBlock cc instr
+    Output _ -> compileIOandCtrl cc instr
+    Input _ -> compileIOandCtrl cc instr
+    Tag i _ -> compileTag cc i instr
+    Return -> compileReturn cc
+    Exit -> compileIOandCtrl cc instr
 
-compileDecl :: CompilationContext -> Decl -> ([Text], CompilationContext)
-compileDecl = undefined
+compileDecl :: [ Decl ] -> ([Text], CompilationContext)
+compileDecl decl = ([dataLine], newCtx)
+  where
+    labels = filter isALabel decl
+    variables = filter (not . isALabel) decl
+    newCtx = defaultContext { varMap = varMap defaultContext ++ (show <$> variables) }
+    dataLine::Text
+    dataLine = pack $ "DATA " ++ show (Data.List.intersperse ',' $ take (length variables) $ repeat '0')
+
+defaultContext :: CompilationContext
+defaultContext = CompilationContext {
+  instrCount = 0,
+  labelMap = [],
+  varMap = ["ret"]
+}
