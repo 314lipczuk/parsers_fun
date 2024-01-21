@@ -293,13 +293,13 @@ isALabel x = case x of
   (LabelDecl _) -> True
   _ -> False
 
-compile :: ([Decl], [Instr]) -> Text
-compile (declarations, instructions) = stage1
+compile :: ([Decl], [Instr]) -> (Text, CompilationContext)
+compile (declarations, instructions) = (output, lastCtx)
   where
     (text, initialConfig) = compileDecl declarations
-    (text2, finalConfig) = foldl (\(text, config) instr -> let (newText, newConfig) = compileInstr config instr in (text <> newText, newConfig)) (text, initialConfig) instructions
-    stage1 = foldl (<>) (pack "") (intersperse (pack "\n") text2)
-
+    (text2, config1) = foldl (\(text, config) instr -> let (newText, newConfig) = compileInstr config instr in (text <> newText, newConfig)) (text, initialConfig) instructions
+    (stage2res, lastCtx) = stage2 (text2, config1)
+    output = foldl (<>) (pack "") (intersperse (pack "\n") stage2res)
     -- newlined = intersperse (pack "\n") (fst x)
     -- y = foldl (<>) (pack "") newlined
 
@@ -309,7 +309,10 @@ readAndCompile = do
   let parsed = parse parseProgram "" (pack input)
   case parsed of 
     Left err -> print err
-    Right o -> Data.Text.putStrLn $  compile o
+    Right o ->  do
+      let (t,ct) = compile o
+      printContext ct
+      Data.Text.putStrLn t
 
 compileConstNum :: CompilationContext-> NumExpr -> ([Text],CompilationContext)
 compileConstNum i n = case n of
@@ -358,10 +361,17 @@ instance Num CompilationContext where
 
 getAddressOfVariable :: CompilationContext -> String -> Maybe Int
 getAddressOfVariable cc s =
-  case elemIndex s $ varMap cc of
-    Just i -> Just i
+   case elemIndex s $ varMap cc of
+    Just i ->  Just i
     Nothing -> Nothing
 
+printContext :: CompilationContext -> IO ()
+printContext c = do
+  putStrLn "##### CompilationContext #####"
+  putStrLn $ "instrCount: " ++ show (instrCount c)
+  putStrLn $ "labelMap: " ++ show (labelMap c)
+  putStrLn $ "varMap: " ++ show (varMap c)
+  putStrLn ""
 data BindOp = ConstNum_ | IdentN_
 compileBindOp :: BindOp -> CompilationContext-> NumExpr -> ([Text],CompilationContext)
 compileBindOp o i b = ([sumLine], Lib.succ i)
@@ -431,6 +441,7 @@ printCompilationResult x = Data.Text.putStrLn y
 
 compileAssignment :: CompilationContext -> Instr -> ([Text], CompilationContext)
 compileAssignment cc i = (sumProgram, Lib.succ ctx1)
+-- refactor this, it's supposed to save stuff to memory.
   where
     (ident, ne) = case i of
       Assign x ne -> (x, ne)
@@ -440,7 +451,6 @@ compileAssignment cc i = (sumProgram, Lib.succ ctx1)
     address = case getAddressOfVariable ctx1 identKey of
       Just a -> show a
       _ -> "@" <> identKey 
-
     sumLine = pack (show ctx1) <> "\tPOP $" <> pack  address
     sumProgram = progNe ++ [sumLine]
 
@@ -496,22 +506,23 @@ countInstr (num, instr) =  (pack . show) num <> "\t" <> instr
 
 -- wiec zeby skoczyć dobrze, muszę dać $CURRENT + LEN(DYNAMIC) + 4
 
-booleanLabels :: CompilationContext -> ([Text], CompilationContext)
-booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
-  where
-    content = ["POP", "PUSH 1", "JMP @ret", "POP", "PUSH 0", "JMP @ret"]
-    numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] content
-    countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
+compileInput :: CompilationContext -> Ident -> ([Text], CompilationContext)
+compileInput cc (Ident ident) = (instrs, Lib.succ $ Lib.succ cc)
+  where 
+    address = case  getAddressOfVariable cc ident of
+      Just a -> show a
+      _ -> error "Variable not found"
+    f = \(instr, ctx) -> pack $ show ctx <> "\t" <> instr
+    instrs = map f (zip [ "READ", "POP $" <> address ] (iterate Lib.succ cc))
 
 compileIOandCtrl :: CompilationContext -> Instr -> ([Text], CompilationContext)
 compileIOandCtrl cc i= ([pack instr], Lib.succ cc)
   where
     (ioType) = case i of
-      Input _ -> "READ"
       Output _ -> "PRINT"
       Exit ->   "STOP"
       _ -> error "Expected IO instruction here, got something else"
-    instr =show cc <> "\t" <> ioType
+    instr = show cc <> "\t" <> ioType
 
 compileBlock :: CompilationContext -> Instr -> ([Text], CompilationContext)
 compileBlock cc i = (instrs, ctx)
@@ -588,7 +599,7 @@ compileRawIf cc be i = (fullProgram, ctxAfterInstr)
     (bEProgram, ctxAfterBE) = compileBoolExpr cc be
     (instrProgram, ctxAfterInstr) = compileInstr (Lib.succ ctxAfterBE) i
     jumpToTheEnd::[Text]
-    jumpToTheEnd = [ pack $ show ctxAfterInstr <> "\tJZ $" <> show ctxAfterInstr]
+    jumpToTheEnd = [ pack $ show  ctxAfterBE <> "\tJZ $" <> show ctxAfterInstr]
     fullProgram = bEProgram <> jumpToTheEnd <> instrProgram
 
 compileIfElse :: CompilationContext -> BoolExpr -> Instr -> Instr -> ([Text], CompilationContext)
@@ -606,12 +617,13 @@ compileIfElse cc be a b = (fullProgram, ctxAfterInstrB)
     fullProgram = bEProgram <> jumpConditional <> instrProgramA <> jumpToFinish <> instrProgramB
 
 compileTag :: CompilationContext -> Ident -> Instr -> ([Text], CompilationContext)
-compileTag cc id instr = ([], newCtx)
+compileTag cc id instr = (prog, newCtx)
   where
+    (prog, ca) = compileInstr cc instr
     newCtx = CompilationContext{
-      instrCount = instrCount cc,
-      labelMap = (instrCount cc, show id) : labelMap cc,
-      varMap = varMap cc
+      instrCount = instrCount ca,
+      labelMap = (instrCount cc, show id) : labelMap ca,
+      varMap = varMap ca
     }
 
 getAddressOfLabel :: CompilationContext -> Ident -> Maybe Int
@@ -658,8 +670,8 @@ compileInstr cc instr =
     Gosub i -> compileGosub cc i
     Block _ -> compileBlock cc instr
     Output _ -> compileIOandCtrl cc instr
-    Input _ -> compileIOandCtrl cc instr
-    Tag i _ -> compileTag cc i instr
+    Input i -> compileInput cc i
+    Tag i ins -> compileTag cc i ins
     Return -> compileReturn cc
     Exit -> compileIOandCtrl cc instr
 
@@ -668,9 +680,13 @@ compileDecl decl = ([dataLine], newCtx)
   where
     labels = filter isALabel decl
     variables = filter (not . isALabel) decl
-    newCtx = defaultContext { varMap = varMap defaultContext ++ (show <$> variables) }
+    newCtx = defaultContext { varMap = varMap defaultContext ++  (unwrapDecl <$> variables) }
     dataLine::Text
     dataLine = pack $ "DATA " ++ show (Data.List.intersperse ',' $ take (length variables) $ repeat '0')
+    unwrapDecl :: Decl -> String
+    unwrapDecl d = case d of
+      LabelDecl (Ident x) -> x
+      VarDecl (Ident x) -> x 
 
 defaultContext :: CompilationContext
 defaultContext = CompilationContext {
@@ -678,3 +694,21 @@ defaultContext = CompilationContext {
   labelMap = [],
   varMap = ["ret"]
 }
+
+stage2 :: ([Text], CompilationContext) -> ([Text], CompilationContext)
+stage2 (txs, cc) =  (boolScaff, cc2)
+  where
+    endLine = show cc <> "\tSTOP"
+    (boolScaff, cc2) = insertBooleanScaffolding (txs <> ( pack <$> [endLine]), Lib.succ cc)
+
+insertBooleanScaffolding :: ([Text], CompilationContext) -> ([Text], CompilationContext)
+insertBooleanScaffolding (t, cc) = (t <> blText , cc2)
+  where
+    (blText, cc2) = booleanLabels cc  
+
+booleanLabels :: CompilationContext -> ([Text], CompilationContext)
+booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
+  where
+    content = ["POP", "PUSH 1", "JMP @ret", "POP", "PUSH 0", "JMP @ret"]
+    numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] content
+    countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
