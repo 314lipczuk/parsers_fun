@@ -638,7 +638,7 @@ compileGoto cc i = ([instr], Lib.succ cc)
     address = case getAddressOfLabel cc i of
       Just a -> show a
       _ -> "@" <> str
-    instr = pack $ show cc <> "\tJMP " <> show address
+    instr = pack $ show cc <> "\tJMP " <> address
 
 compileGosub :: CompilationContext -> Ident -> ([Text], CompilationContext)
 compileGosub cc i = (instr, finalCtx)
@@ -702,13 +702,24 @@ stage2 (txs, cc) =  (boolScaff, cc2)
     (boolScaff, cc2) = insertBooleanScaffolding (txs <> ( pack <$> [endLine]), Lib.succ cc)
 
 insertBooleanScaffolding :: ([Text], CompilationContext) -> ([Text], CompilationContext)
-insertBooleanScaffolding (t, cc) = (t <> blText , cc2)
+insertBooleanScaffolding (t, cc) = (t <> blText ,finalCtx)
   where
     (blText, cc2) = booleanLabels cc  
-
+    setTrueAddr = cc
+    setFalseAddr = iterate Lib.succ cc !! 3
+    finalCtx = CompilationContext {
+      instrCount = instrCount cc2,
+      labelMap = labelMap cc2 ++ [ (instrCount setTrueAddr, "setTrue"), (instrCount setFalseAddr, "setFalse") ],
+      varMap = varMap cc2 
+    }
 booleanLabels :: CompilationContext -> ([Text], CompilationContext)
 booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
   where
     content = ["POP", "PUSH 1", "JMP @ret", "POP", "PUSH 0", "JMP @ret"]
     numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] content
     countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
+
+
+findHoles :: ([Text],CompilationContext) -> ([Text], CompilationContext)
+findHoles (lines, cc) = undefined
+  where
