@@ -52,7 +52,6 @@ import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import Data.List (elemIndex)
 import Data.List (intersperse)
-import Data.Text.Lazy (unpack, foldl')
 import qualified Data.Text.IO as Data.Text
 import Data.Tuple (swap)
 
@@ -294,12 +293,13 @@ isALabel x = case x of
   _ -> False
 
 compile :: ([Decl], [Instr]) -> (Text, CompilationContext)
-compile (declarations, instructions) = (output, lastCtx)
+compile (declarations, instructions) = (output, config3)
   where
     (text, initialConfig) = compileDecl declarations
     (text2, config1) = foldl (\(text, config) instr -> let (newText, newConfig) = compileInstr config instr in (text <> newText, newConfig)) (text, initialConfig) instructions
-    (stage2res, lastCtx) = stage2 (text2, config1)
-    output = foldl (<>) (pack "") (intersperse (pack "\n") stage2res)
+    (stage2C,config2) = stage2 (text2, config1)
+    (backPatchedCode, config3) = backpatch (stage2C, config2)
+    output = foldl (<>) (pack "") (intersperse (pack "\n") backPatchedCode)
     -- newlined = intersperse (pack "\n") (fst x)
     -- y = foldl (<>) (pack "") newlined
 
@@ -619,15 +619,16 @@ compileIfElse cc be a b = (fullProgram, ctxAfterInstrB)
 compileTag :: CompilationContext -> Ident -> Instr -> ([Text], CompilationContext)
 compileTag cc id instr = (prog, newCtx)
   where
+    idname = case id of 
+      Ident x -> x
+      _ -> error "Expected ident here, got something else"
     (prog, ca) = compileInstr cc instr
     newCtx = CompilationContext{
       instrCount = instrCount ca,
-      labelMap = (instrCount cc, show id) : labelMap ca,
+      labelMap = (instrCount cc, idname) : labelMap ca,
       varMap = varMap ca
     }
 
-getAddressOfLabel :: CompilationContext -> Ident -> Maybe Int
-getAddressOfLabel cc idn = lookup (show idn) $ fmap swap (labelMap cc)
 
 compileGoto :: CompilationContext -> Ident -> ([Text], CompilationContext)
 compileGoto cc i = ([instr], Lib.succ cc)
@@ -635,7 +636,7 @@ compileGoto cc i = ([instr], Lib.succ cc)
     str = case i of
       Ident x -> x
       _ -> error "Expected ident here, got something else"
-    address = case getAddressOfLabel cc i of
+    address = case getAddressOfLabel cc str of
       Just a -> show a
       _ -> "@" <> str
     instr = pack $ show cc <> "\tJMP " <> address
@@ -646,7 +647,7 @@ compileGosub cc i = (instr, finalCtx)
     str = case i of
       Ident x -> x
       _ -> error "Expected ident here, got something else"
-    address = case getAddressOfLabel cc i of
+    address = case getAddressOfLabel cc str of
       Just a -> show a
       _ -> "@" <> str
     finalCtx = iterate Lib.succ cc !! 2
@@ -692,7 +693,7 @@ defaultContext :: CompilationContext
 defaultContext = CompilationContext {
   instrCount = 0,
   labelMap = [],
-  varMap = ["ret"]
+  varMap = ["ret", "boolSetRet"]
 }
 
 stage2 :: ([Text], CompilationContext) -> ([Text], CompilationContext)
@@ -715,11 +716,43 @@ insertBooleanScaffolding (t, cc) = (t <> blText ,finalCtx)
 booleanLabels :: CompilationContext -> ([Text], CompilationContext)
 booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
   where
-    content = ["POP", "PUSH 1", "JMP @ret", "POP", "PUSH 0", "JMP @ret"]
-    numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] content
+    returnAddress = case getAddressOfVariable cc "boolSetRet" of
+      Just a -> show a
+      _ -> error "Variable ret not found"
+    content = ["POP", "PUSH 1", "JMP "<>returnAddress, "POP", "PUSH 0", "JMP " <> returnAddress]
+    numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] $ pack <$> content
     countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
 
+parseHole :: Parser Text
+parseHole = do
+  _ <- many alphaNumChar
+  _ <- many (letterChar <|> char ' ' <|> char '\t')
+  _ <- symbol "@"
+  holeName <- lexeme ((:) <$> letterChar <*> many alphaNumChar)
+  return $ pack holeName
 
-findHoles :: ([Text],CompilationContext) -> ([Text], CompilationContext)
-findHoles (lines, cc) = undefined
+patchHole :: CompilationContext -> Text -> Text
+patchHole cc l = if hasHole then patchedLine else l 
   where
+    (hasHole, hName) = case parse parseHole "" l of
+      Left _ -> (False, "")
+      Right holeName -> (True, holeName)
+    patchedLine = TextPack.replace ("@" <> hName) (pack addr) l
+    addr = case getAddressOfLabel cc (TextPack.unpack hName) of
+      Just a -> show a
+      _ -> error ("Label " <> TextPack.unpack hName <>" not found")
+    
+backpatch :: ([Text], CompilationContext) -> ([Text], CompilationContext)
+backpatch (lines, cc) = (patchedLines, cc)
+  where
+    patchedLines = patchHole cc <$> lines
+    
+
+testContext = CompilationContext {
+  instrCount = 0,
+  labelMap = [(21, "setTrue"), (24, "setFalse")],
+  varMap = []
+}
+
+getAddressOfLabel :: CompilationContext -> String -> Maybe Int
+getAddressOfLabel cc idn = lookup idn $ fmap swap (labelMap cc)
