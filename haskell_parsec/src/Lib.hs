@@ -10,9 +10,11 @@
 module Lib
   ( Decl (..),
     parseLabelDecl,
+    mainF,
     parseProgramInstr,
     parseProgramDecl,
     parseVarDecl,
+    compile,
     parseDeclaration,
     parseDeclarations,
     parseProgram,
@@ -303,16 +305,6 @@ compile (declarations, instructions) = (output, config3)
     -- newlined = intersperse (pack "\n") (fst x)
     -- y = foldl (<>) (pack "") newlined
 
-readAndCompile :: IO ()
-readAndCompile = do
-  input <- readFile "./test/testfile1.txt"
-  let parsed = parse parseProgram "" (pack input)
-  case parsed of
-    Left err -> print err
-    Right o ->  do
-      let (t,ct) = compile o
-      printContext ct
-      Data.Text.putStrLn t
 
 compileConstNum :: CompilationContext-> NumExpr -> ([Text],CompilationContext)
 compileConstNum i n = case n of
@@ -497,32 +489,6 @@ compileRelationalExpr cc re = (finalInstructions, finalContext)
 
 countInstr :: (Int , Text) -> Text
 countInstr (num, instr) =  (pack . show) num <> "\t" <> instr
-
--- a b
--- push a push b
--- [a b]
--- mnozenie
--- [a*b]
-
--- GreaterEq -> sub -> push 1 -> sub -> jgz
--- Greater -> sub -> jgz
--- Less-> sub -> jlz
--- LessEq-> sub -> push 1 -> sub -> jlz
--- Eq -> sub -> jz
--- Neq -> sub -> jnz
-
--- in reg: 13
-
--- 12 push 1
--- 13 PUSH retaddr
--- 14 POP retaddr
--- 15 SUB
--- 16 JGZ | 16 PUSH 1 -> 17 SUB -> 18 JGZ setTrue
---15|19 JMP setFalse
--- # after jump, should have 1 or 0 on stack as true or false
--- 18 | 20 nop
-
--- wiec zeby skoczyć dobrze, muszę dać $CURRENT + LEN(DYNAMIC) + 4
 
 compileInput :: CompilationContext -> Ident -> ([Text], CompilationContext)
 compileInput cc (Ident ident) = (instrs, Lib.succ $ Lib.succ cc)
@@ -786,4 +752,15 @@ testModuloCompilation = do
     Right o ->  do
       let (t,ct) = compile o
       printContext ct
+      Data.Text.putStrLn t
+
+mainF :: IO ()
+mainF = do
+  input <- getContents
+  let parsed = parse parseProgram "" (pack input)
+  case parsed of
+    Left err -> print err
+    Right o ->  do
+      let (t,ct) = compile o
+      --printContext ct
       Data.Text.putStrLn t
