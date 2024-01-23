@@ -131,7 +131,7 @@ spec_parseBoolExpr = do
     showCC got `shouldBe` showCC expected
 
   it "compile more complex numerical expression: -(1+a) * 4" $ do
-    let expr = Product (Negation(Sum (ConstNum 1) (IdentN "a") )) (ConstNum 4) 
+    let expr = Product (Negation (Sum (ConstNum 1) (IdentN "a") )) (ConstNum 4)
     let compilationContext = CompilationContext {instrCount = 0, labelMap=[], varMap=["a"]}
     let expected = (pack <$> ["0\tPUSH 1","1\tPUSH $0","2\tADD","3\tNEG","4\tPUSH 4","5\tMUL"],6)
     let got = compileNumExpr compilationContext expr
@@ -140,13 +140,53 @@ spec_parseBoolExpr = do
     showCC got `shouldBe` showCC expected
 
   it "compiles relational expr - first stage" $ do
-    let expr = GreaterEquals (ConstNum 4) (ConstNum 8) 
-    let compilationContext = CompilationContext {instrCount = 5, labelMap=[], varMap=["ret"]}
-    let expected = (pack <$> ["5\tPUSH 4","6\tPUSH 8","7\tPUSH 14","8\tPOP $0", "9\tSUB","10\tPUSH 1","11\tSUB","12\tJGZ @setTrue","13\tJMP @setFalse"],14)
+    let expr = GreaterEquals (ConstNum 4) (ConstNum 8)
+    let compilationContext = CompilationContext {instrCount = 5, labelMap=[], varMap=["ret", "boolSetRet"]}
+    let expected = (pack <$> ["5\tPUSH 4","6\tPUSH 8","7\tPUSH 14","8\tPOP $1", "9\tSUB","10\tPUSH 1","11\tSUB","12\tJGZ @setTrue","13\tJMP @setFalse"],14)
     let got = compileRelationalExpr compilationContext expr
     fst got `shouldBe` fst expected
     let showCC = show . snd
     showCC got `shouldBe` showCC expected
+
+
+  it "compiles program from example" $ do
+    input <- Data.Text.IO.readFile "test/testfile1.txt"
+    desiredOutput <- Data.Text.IO.readFile "test/resultfile1.txt"
+    case parse parseProgram "" input of
+      Left err -> fail (errorBundlePretty err)
+      Right result -> do
+        let (t,ct) = compile result
+        --printContext ct
+        t `shouldBe` desiredOutput
+        length ( labelMap ct) `shouldBe` 3
+    --let compiled = 
+    --fst got `shouldBe` fst expected
+    --let showCC = show . snd
+    --showCC got `shouldBe` showCC expected
+
+
+  it "compiles sample program for evaluating modulo " $ do
+    input <- Data.Text.IO.readFile "test/testfile2.txt"
+    desiredOutput <- Data.Text.IO.readFile "test/resultfile2.txt"
+    case parse parseProgram "" input of
+      Left err -> fail (errorBundlePretty err)
+      Right result -> do
+        let (t,ct) = compile result
+        --printContext ct
+        t `shouldBe` desiredOutput
+        length ( labelMap ct) `shouldBe` 2
+
+
+  it "compiles sample program for gosubs " $ do
+    input <- Data.Text.IO.readFile "test/testfile3.txt"
+    desiredOutput <- Data.Text.IO.readFile "test/resultfile3.txt"
+    case parse parseProgram "" input of
+      Left err -> fail (errorBundlePretty err)
+      Right result -> do
+        let (t,ct) = compile result
+        --printContext ct
+        t `shouldBe` desiredOutput
+        length ( labelMap ct) `shouldBe` 3
 
   it "should parse sample program from file" $ do
     file <- Data.Text.IO.readFile "test/testfile1.txt"
@@ -161,7 +201,7 @@ spec_parseBoolExpr = do
             [ Input (Ident "k"),
               If
                 (Relational (Greater (IdentN "k") (ConstNum 0)))
-                ( Block
+                (Block
                     [ Assign (Ident "j") (ConstNum 1),
                       Assign (Ident "i") (IdentN "k"),
                       Tag (Ident "loop") (Assign (Ident "j") (Product (IdentN "j") (IdentN "i"))),
@@ -216,15 +256,3 @@ spec_parseBoolExpr = do
                 )
                 Nothing
             ])
-
-
-
-
-
-
-
-
--- [ ] <-
--- push 1 : [ 1 ] <-
--- push 2 : [ 1, 2 ] <-
--- add : [ 3 ] <-

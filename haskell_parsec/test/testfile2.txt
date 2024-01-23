@@ -1,4 +1,3 @@
-label loop;
 var k;
 read k;
 k := 7 % k;

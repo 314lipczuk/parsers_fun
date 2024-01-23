@@ -1,0 +1,29 @@
+DATA	0,0,0,0
+#	k,ret,boolSetRet,gp
+0	READ
+1	POP $0
+2	PUSH 4
+3	JMP $11
+4	PUSH $0
+5	PRINT
+6	PUSH 8
+7	JMP $11
+8	PUSH $0
+9	PRINT
+10	STOP
+11	PUSH $0
+12	PUSH 1
+13	ADD
+14	POP $0
+15	push $1
+16	jmp
+17	STOP
+#BoolLabels - setTrue, setFalse
+18	POP
+19	PUSH 1
+20	PUSH $2
+21	JMP
+22	POP
+23	PUSH 0
+24	PUSH $2
+25	JMP

@@ -37,7 +37,10 @@ module Lib
     compileNumExpr,
     compileRelationalExpr,
     defaultContext,
-    CompilationContext(..)
+    CompilationContext(..),
+    labelMap,
+    varMap,
+    instrCount,
   )
 where
 

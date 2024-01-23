@@ -1,0 +1,11 @@
+label fun;
+var k;
+read k;
+gosub fun;
+print k;
+gosub fun;
+print k;
+exit;
+fun:
+k := k + 1;
+return;
