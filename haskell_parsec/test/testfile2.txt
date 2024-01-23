@@ -1,0 +1,6 @@
+label loop;
+var k;
+read k;
+k := 7 % k;
+print k;
+end;

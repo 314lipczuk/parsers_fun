@@ -42,7 +42,7 @@ where
 import Control.Monad.Combinators.Expr
 import qualified Data.Text as TextPack
 import Data.Text (pack)
-import Data.Char (isAlpha)
+import Data.Char (isAlpha, lexLitChar)
 import Data.Functor (($>), (<&>))
 import Data.Text (Text)
 import Data.Void
@@ -305,9 +305,9 @@ compile (declarations, instructions) = (output, config3)
 
 readAndCompile :: IO ()
 readAndCompile = do
-  input <- readFile "./test/testfile1.txt" 
+  input <- readFile "./test/testfile1.txt"
   let parsed = parse parseProgram "" (pack input)
-  case parsed of 
+  case parsed of
     Left err -> print err
     Right o ->  do
       let (t,ct) = compile o
@@ -381,7 +381,7 @@ compileBindOp o i b = ([sumLine], Lib.succ i)
       ConstNum x -> show x
       IdentN x -> case getAddressOfVariable i x of
         Just x -> show x
-        _ -> "@" <> x  
+        _ -> "@" <> x
       _ -> error "Expected constNum here, got something else"
     bindOp :: BindOp -> Text
     bindOp o = pack $ (<>) "\t" $ case o of
@@ -417,7 +417,8 @@ compileBinaryOp o i n1 n2 = (sumProgram, Lib.succ n2InstrCount)
           Subtr_ -> "SUB"
           Product_ -> "MUL"
           Division_ -> "DIV"
-          Modulo_ -> "MOD"
+          _ -> error "Expected binaryOp here, got something else"
+          --Modulo_ -> "MOD"
 
 compileNumExpr :: CompilationContext -> NumExpr -> ([Text],CompilationContext)
 compileNumExpr i e = case e of
@@ -429,8 +430,25 @@ compileNumExpr i e = case e of
   Subtr n1 n2 -> compileBinaryOp Subtr_ i n1 n2
   Product n1 n2 -> compileBinaryOp Product_ i n1 n2
   Division n1 n2 -> compileBinaryOp Division_ i n1 n2
-  Modulo n1 n2 -> compileBinaryOp Modulo_ i n1 n2
+  Modulo n1 n2 -> compileModulo i n1 n2
   _ -> error "Not implemented"
+
+
+compileModulo :: CompilationContext -> NumExpr -> NumExpr -> ([Text],CompilationContext)
+compileModulo cc ne1 ne2 = result
+  where
+    (program1, cc1) = compileNumExpr cc ne1
+    (program2, cc2) = compileNumExpr cc1 ne2
+    moduloLoop = ["POP $" <> gp, "PUSH $" <> gp, "SUB", "PUSH $" <> gp, "SUB", "JLZ $" <> fin, "PUSH $"<>gp, "ADD", "JMP $"<> show (Lib.succ cc2)]
+    numberedModulo = fmap (\(instr, ct) -> pack $ show ct <> "\t" <> instr) (zip moduloLoop ([instrCount cc2..]))
+    lastCtxAfterMainLoop = iterate Lib.succ cc2 !! length moduloLoop
+    finish = fmap (\(instr, ct) -> pack $ show ct <> "\t" <> instr) (zip moduloEnd ([instrCount lastCtxAfterMainLoop..]))
+    gp = case getAddressOfVariable cc2 "gp" of
+      Just a -> show a
+      _ -> error "Variable gp not found"
+    moduloEnd = ["PUSH $"<>gp, "ADD"]
+    fin = show lastCtxAfterMainLoop
+    result = (program1 ++ program2 ++ numberedModulo ++ finish, iterate Lib.succ lastCtxAfterMainLoop !! 2)
 
 printCompilationResult :: ([Text], a) -> IO ()
 printCompilationResult x = Data.Text.putStrLn y
@@ -450,7 +468,7 @@ compileAssignment cc i = (sumProgram, Lib.succ ctx1)
     (progNe, ctx1 ) = compileNumExpr cc ne
     address = case getAddressOfVariable ctx1 identKey of
       Just a -> show a
-      _ -> "@" <> identKey 
+      _ -> "@" <> identKey
     sumLine = pack (show ctx1) <> "\tPOP $" <> pack  address
     sumProgram = progNe ++ [sumLine]
 
@@ -469,7 +487,7 @@ compileRelationalExpr cc re = (finalInstructions, finalContext)
     (n1Program, n1InstCount) = compileNumExpr cc n1
     (n2Program, n2InstrCount) = compileNumExpr n1InstCount n2
     addressToPutInReturn = instrCount n2InstrCount + length condition + 4
-    addressOfReturn = case getAddressOfVariable n2InstrCount "ret" of
+    addressOfReturn = case getAddressOfVariable n2InstrCount "boolSetRet" of
       Just a -> a
       _ -> error "Variable ret not found"
     instructions = pack <$> ["PUSH " ++ show addressToPutInReturn, "POP $" ++ show addressOfReturn , "SUB"] ++ condition ++ ["JMP @setFalse"]
@@ -508,7 +526,7 @@ countInstr (num, instr) =  (pack . show) num <> "\t" <> instr
 
 compileInput :: CompilationContext -> Ident -> ([Text], CompilationContext)
 compileInput cc (Ident ident) = (instrs, Lib.succ $ Lib.succ cc)
-  where 
+  where
     address = case  getAddressOfVariable cc ident of
       Just a -> show a
       _ -> error "Variable not found"
@@ -619,7 +637,7 @@ compileIfElse cc be a b = (fullProgram, ctxAfterInstrB)
 compileTag :: CompilationContext -> Ident -> Instr -> ([Text], CompilationContext)
 compileTag cc id instr = (prog, newCtx)
   where
-    idname = case id of 
+    idname = case id of
       Ident x -> x
       _ -> error "Expected ident here, got something else"
     (prog, ca) = compileInstr cc instr
@@ -639,7 +657,7 @@ compileGoto cc i = ([instr], Lib.succ cc)
     address = case getAddressOfLabel cc str of
       Just a -> show a
       _ -> "@" <> str
-    instr = pack $ show cc <> "\tJMP " <> address
+    instr = pack $ show cc <> "\tJMP $" <> address
 
 compileGosub :: CompilationContext -> Ident -> ([Text], CompilationContext)
 compileGosub cc i = (instr, finalCtx)
@@ -651,7 +669,7 @@ compileGosub cc i = (instr, finalCtx)
       Just a -> show a
       _ -> "@" <> str
     finalCtx = iterate Lib.succ cc !! 2
-    instr = pack <$> [ show cc <> "\tPUSH " <> show finalCtx , show (Lib.succ cc) <> "\tJMP " <> address]
+    instr = pack <$> [ show cc <> "\tPUSH " <> show finalCtx , show (Lib.succ cc) <> "\tJMP $" <> address]
 
 compileReturn :: CompilationContext -> ([Text], CompilationContext)
 compileReturn cc = (instr,finalCtx)
@@ -670,30 +688,39 @@ compileInstr cc instr =
     Goto i -> compileGoto cc i
     Gosub i -> compileGosub cc i
     Block _ -> compileBlock cc instr
-    Output _ -> compileIOandCtrl cc instr
+    Output i -> compilePrint cc i
     Input i -> compileInput cc i
     Tag i ins -> compileTag cc i ins
     Return -> compileReturn cc
     Exit -> compileIOandCtrl cc instr
 
+compilePrint :: CompilationContext -> NumExpr -> ([Text], CompilationContext)
+compilePrint cc ne = (fullProgram, Lib.succ ctx)
+  where
+    (program, ctx) = compileNumExpr cc ne
+    instr = pack $ show ctx <> "\tPRINT"
+    fullProgram = program ++ [instr]
+
 compileDecl :: [ Decl ] -> ([Text], CompilationContext)
-compileDecl decl = ([dataLine], newCtx)
+compileDecl decl = ([dataLine, initialComment], newCtx)
   where
     labels = filter isALabel decl
     variables = filter (not . isALabel) decl
-    newCtx = defaultContext { varMap = varMap defaultContext ++  (unwrapDecl <$> variables) }
+    newCtx = defaultContext { varMap = (unwrapDecl <$> variables) ++ varMap defaultContext  }
     dataLine::Text
-    dataLine = pack $ "DATA " ++ show (Data.List.intersperse ',' $ take (length variables) $ repeat '0')
+
+    initialComment = pack ("#\t" ++ concat (Data.List.intersperse "," $ varMap newCtx))
+    dataLine = pack ("DATA\t" ++ (Data.List.intersperse ',' $ take (length $ varMap newCtx) $ repeat '0'))
     unwrapDecl :: Decl -> String
     unwrapDecl d = case d of
       LabelDecl (Ident x) -> x
-      VarDecl (Ident x) -> x 
+      VarDecl (Ident x) -> x
 
 defaultContext :: CompilationContext
 defaultContext = CompilationContext {
   instrCount = 0,
   labelMap = [],
-  varMap = ["ret", "boolSetRet"]
+  varMap = ["ret", "boolSetRet", "gp"]
 }
 
 stage2 :: ([Text], CompilationContext) -> ([Text], CompilationContext)
@@ -705,21 +732,21 @@ stage2 (txs, cc) =  (boolScaff, cc2)
 insertBooleanScaffolding :: ([Text], CompilationContext) -> ([Text], CompilationContext)
 insertBooleanScaffolding (t, cc) = (t <> blText ,finalCtx)
   where
-    (blText, cc2) = booleanLabels cc  
+    (blText, cc2) = booleanLabels cc
     setTrueAddr = cc
-    setFalseAddr = iterate Lib.succ cc !! 3
+    setFalseAddr = iterate Lib.succ cc !! 4
     finalCtx = CompilationContext {
       instrCount = instrCount cc2,
       labelMap = labelMap cc2 ++ [ (instrCount setTrueAddr, "setTrue"), (instrCount setFalseAddr, "setFalse") ],
-      varMap = varMap cc2 
+      varMap = varMap cc2
     }
 booleanLabels :: CompilationContext -> ([Text], CompilationContext)
-booleanLabels cc = ([pack "#BoolLabels"] <> numbered, countedCtx)
+booleanLabels cc = ([pack "#BoolLabels - setTrue, setFalse"] <> numbered, countedCtx)
   where
     returnAddress = case getAddressOfVariable cc "boolSetRet" of
       Just a -> show a
-      _ -> error "Variable ret not found"
-    content = ["POP", "PUSH 1", "JMP "<>returnAddress, "POP", "PUSH 0", "JMP " <> returnAddress]
+      _ -> error "Variable boolSetRet not found"
+    content = ["POP", "PUSH 1", "PUSH $"<>returnAddress, "JMP", "POP", "PUSH 0","PUSH $" <> returnAddress, "JMP"]
     numbered = zipWith (\x y -> pack (show x) <> "\t" <> y) [instrCount cc..] $ pack <$> content
     countedCtx = Prelude.foldl (\x y -> Lib.succ x) cc content
 
@@ -732,27 +759,31 @@ parseHole = do
   return $ pack holeName
 
 patchHole :: CompilationContext -> Text -> Text
-patchHole cc l = if hasHole then patchedLine else l 
+patchHole cc l = if hasHole then patchedLine else l
   where
     (hasHole, hName) = case parse parseHole "" l of
       Left _ -> (False, "")
       Right holeName -> (True, holeName)
-    patchedLine = TextPack.replace ("@" <> hName) (pack addr) l
+    patchedLine = TextPack.replace ("@" <> hName) (pack $ "$" <> addr) l
     addr = case getAddressOfLabel cc (TextPack.unpack hName) of
       Just a -> show a
       _ -> error ("Label " <> TextPack.unpack hName <>" not found")
-    
+
 backpatch :: ([Text], CompilationContext) -> ([Text], CompilationContext)
 backpatch (lines, cc) = (patchedLines, cc)
   where
     patchedLines = patchHole cc <$> lines
-    
-
-testContext = CompilationContext {
-  instrCount = 0,
-  labelMap = [(21, "setTrue"), (24, "setFalse")],
-  varMap = []
-}
 
 getAddressOfLabel :: CompilationContext -> String -> Maybe Int
 getAddressOfLabel cc idn = lookup idn $ fmap swap (labelMap cc)
+
+testModuloCompilation :: IO ()
+testModuloCompilation = do
+  input <- readFile "./test/testfile2.txt"
+  let parsed = parse parseProgram "" (pack input)
+  case parsed of
+    Left err -> print err
+    Right o ->  do
+      let (t,ct) = compile o
+      printContext ct
+      Data.Text.putStrLn t
