@@ -188,6 +188,7 @@ parseInstr =
     <|> parseOutput
     <|> parseInput
     <|> parseReturn
+    <|> parseExit
     <|> try parseTag
     <|> try parseAssignment
     <|> parseIf
@@ -635,12 +636,12 @@ compileGosub cc i = (instr, finalCtx)
       Just a -> show a
       _ -> "@" <> str
     finalCtx = iterate Lib.succ cc !! 2
-    instr = pack <$> [ show cc <> "\tPUSH " <> show finalCtx , show (Lib.succ cc) <> "\tJMP $" <> address]
+    instr = pack <$> [ show cc <> "\tPUSH " <> show finalCtx , show (Lib.succ cc) <> "\tJMP " <> address]
 
 compileReturn :: CompilationContext -> ([Text], CompilationContext)
 compileReturn cc = (instr,finalCtx)
   where
-    instr = pack <$> ( map (\(i,c) -> show c <> "\t" <> i) $ zip [ "pop $" <> returnRegister, "jmp" ] (iterate Lib.succ cc))
+    instr = pack <$> ( map (\(i,c) -> show c <> "\t" <> i) $ zip [ "push $" <> returnRegister, "jmp" ] (iterate Lib.succ cc))
     finalCtx = iterate Lib.succ cc !! length instr
     returnRegister = case getAddressOfVariable cc "ret" of
       Just a -> show a
@@ -719,7 +720,7 @@ booleanLabels cc = ([pack "#BoolLabels - setTrue, setFalse"] <> numbered, counte
 parseHole :: Parser Text
 parseHole = do
   _ <- many alphaNumChar
-  _ <- many (letterChar <|> char ' ' <|> char '\t')
+  _ <- many (letterChar <|> char ' ' <|> char '\t' <|> char '$')
   _ <- symbol "@"
   holeName <- lexeme ((:) <$> letterChar <*> many alphaNumChar)
   return $ pack holeName
@@ -754,6 +755,18 @@ testModuloCompilation = do
       printContext ct
       Data.Text.putStrLn t
 
+
+testCompilation :: String -> IO ()
+testCompilation s = do
+  input <- readFile s
+  let parsed = parse parseProgram "" (pack input)
+  case parsed of
+    Left err -> print err
+    Right o ->  do
+      let (t,ct) = compile o
+      printContext ct
+      Data.Text.putStrLn t
+
 mainF :: IO ()
 mainF = do
   input <- getContents
@@ -764,3 +777,5 @@ mainF = do
       let (t,ct) = compile o
       --printContext ct
       Data.Text.putStrLn t
+
+
